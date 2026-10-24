@@ -51,8 +51,7 @@ buyer = Agent(
     name="reclaimai_buyer",
     seed=BUYER_SEED,
     port=8006,
-    mailbox=bool(AGENTVERSE_API_KEY),
-    agentverse="https://agentverse.ai",
+    endpoint=["http://127.0.0.1:8006/submit"],
     network="testnet",
 )
 
