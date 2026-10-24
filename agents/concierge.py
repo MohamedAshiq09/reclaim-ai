@@ -204,6 +204,8 @@ async def handle_chat_message(ctx: Context, sender: str, msg: ChatMessage):
                 await handle_health_command(ctx, sender)
             elif user_text.lower() in ("/edaakhil", "edaakhil", "petition", "filing packet"):
                 await handle_edaakhil_command(ctx, sender, session)
+            elif any(w in user_text.lower() for w in ["/pay", "purchase", "priority tracking", "payment protocol", "enable tracking", "upgrade"]):
+                await prompt_payment_protocol(ctx, sender, session["case_id"])
             elif user_text.lower() in ("/status", "status", "timeline", "case status"):
                 await handle_status_command(ctx, sender, session)
             else:

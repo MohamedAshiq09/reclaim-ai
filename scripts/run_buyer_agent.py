@@ -58,7 +58,7 @@ if buyer.wallet:
     fund_agent_if_low(str(buyer.wallet.address()))
 
 chat_proto = Protocol(spec=chat_protocol_spec)
-payment_proto = Protocol(spec=payment_protocol_spec)
+payment_proto = Protocol(spec=payment_protocol_spec, role="buyer")
 
 
 @chat_proto.on_message(ChatMessage)
