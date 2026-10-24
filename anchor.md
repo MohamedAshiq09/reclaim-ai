@@ -16,8 +16,11 @@ and re-verifying.
 - Agentic workflow layer created on user instruction: `AGENTS.md` (routing +
   rules contract), `.opencode/agents/` 6 subagents (concierge-builder,
   pipeline-builder, common-builder, research-agent, code-review-agent,
-  git-commit-agent), `.agent/skills/{code-review-gate,git-commit-hygiene,research-source-protocol}`,
-  `opencode.json` (registers `.agent/skills` so skills stay discoverable).
+  git-commit-agent), `code-review-gate`/`git-commit-hygiene`/
+  `research-source-protocol` skills, and `opencode.json` (skills paths).
+- Mid-session the user relocated all fetched skills into `.opencode/skills/`
+  (now 11 skills) and deleted `.agent/.agents/.claude/.cursor` skill trees —
+  references in `AGENTS.md`/`opencode.json`/`anchor.md` updated to match.
 - Pulled teammate's remote batch `a68cbf9..c9be829` with `git stash` +
   `pull --ff-only` + `stash pop`; resolved the `anchor.md` conflict (§8, §12)
   by merging both sides (see §14 Reconciliation Log).
@@ -71,7 +74,7 @@ and re-verifying.
 | **Public ASI:One Shared Chat URL** | **NOT STARTED** | Pending user live chat run | Will generate from ASI:One chat interface |
 | **Demo Video (3–5 min)** | **NOT STARTED** | Script ready in [docs/demo_script.md](docs/demo_script.md) | Recording scheduled for ~15:30 IST |
 | **Dashboard Agent Submission** | **NOT STARTED** | Fetch-A-Thon 3.0 Dashboard | Mandatory via Project Submission Agent |
-| **Agentic Workflow Layer** | **DONE** | [AGENTS.md](AGENTS.md), [.opencode/agents/](.opencode/agents/), [.agent/skills/](.agent/skills/), [opencode.json](opencode.json) | Rules contract + 6 subagents + 3 common skills; pushed on user instruction |
+| **Agentic Workflow Layer** | **DONE** | [AGENTS.md](AGENTS.md), [.opencode/agents/](.opencode/agents/), [.opencode/skills/](.opencode/skills/), [opencode.json](opencode.json) | Rules contract + 6 subagents + 3 common skills; pushed on user instruction |
 
 ---
 
@@ -158,7 +161,7 @@ All 5 agents run on **Fetch.ai Testnet** with deterministic seeds:
 - **Failing Tests**: **ZERO** — verified 2026-10-24 12:05 IST (`TESTING=1 PYTHONPATH=. .venv/bin/pytest tests/ -q` → 15 passed) on HEAD `a68cbf9` after pull.
 - **README Quick Start uses `uv`**: `uv` is not installed on this machine; the verified path is `python3.11 -m venv .venv` (`python3.11` lives at `~/.local/bin/python3.11`). Documented in `AGENTS.md` section 3; README line itself is teammate's call.
 - **Python 3.14 breaks uAgents imports** ("no current event loop" at import time) — keep the Python 3.11 venv; homebrew default `python3` is 3.14.6.
-- **Uncommitted skill-copy deletions**: the working tree currently deletes the skill trees tracked in git — `.agent/skills/`, `.agents/`, `.claude/`, `.cursor/` — while `AGENTS.md`/`opencode.json` reference `.agent/skills/` as the canonical location. Decision pending with user; do NOT stage these deletions without explicit instruction.
+- **Uncommitted skill-dir cleanup**: the working tree deletes the four tracked skill trees — `.agent/skills/`, `.agents/skills/`, `.claude/skills/`, `.cursor/skills/` — while all skills now live locally in `.opencode/skills/` (user relocation). Committing the deletes + `.opencode/skills/**` contents awaits the user's one-liner decision; tracked skill copies still exist at `origin/main` meanwhile.
 - **Proactive Notification**: ASI:One chat sessions cannot be initiated proactively by the agent if the user closes the window. Escalation updates are delivered reliably through the `/status` command, which renders the live chronological audit trail card.
 
 ---
@@ -214,9 +217,9 @@ The full routing/control contract lives in [AGENTS.md](AGENTS.md). Summary of th
 | `code-review-agent` | read-only diff review against AGENTS.md section 2; explicit verdict required before any commit |
 | `git-commit-agent` | atomic commits; both gates required: code-review approval + user instruction |
 
-Common skills live beside the 8 fetched skills in `.agent/skills/`:
-`code-review-gate`, `git-commit-hygiene`, `research-source-protocol`.
-`opencode.json` registers that path so all 11 project skills resolve after
+Common skills live beside the 8 fetched skills in `.opencode/skills/` (now 11
+total): `code-review-gate`, `git-commit-hygiene`, `research-source-protocol`.
+`opencode.json` registers that path so all project skills resolve after
 opencode restart. Restart opencode after adding/changing skills, agents or
 this config file.
 
@@ -228,5 +231,7 @@ this config file.
   `/reply` routing, and `scripts/failure_drill.py` added — closes the §8
   missing-script finding). `anchor.md` conflict (§8, §12) resolved by
   merging both sides; our `§0/§2/§13` preserved. Local skill-tree deletions
-  `.agent/.agents/.claude/.cursor` restored after the pull remains uncommitted
-  pending the user's structure decision (§8). Stash dropped after pop.
+  `.agent/.agents/.claude/.cursor` + the skills' new home `.opencode/skills/`
+  discovered post-pop; AGENTS/opencode.json/anchor references updated to
+  `.opencode/skills/`. Deletion batch remains uncommitted pending the user's
+  structure decision (§8). Stash dropped after pop.
