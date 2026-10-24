@@ -127,7 +127,7 @@ def analyze_rights_and_laws(category: str) -> tuple[str, int, str, str, list[Cit
             Citation(
                 title="DGCA CAR Section 3, Series M, Part II",
                 url="https://www.dgca.gov.in",
-                section="Part II, Para 3.3.2 (Refund of Airline Tickets)",
+                section="Part II, Para 3.3 (Refund of Airline Tickets)",
                 note="Mandates ticket refund within 7 working days for credit cards and 14 days for agent bookings.",
             )
         )
@@ -152,8 +152,8 @@ def analyze_rights_and_laws(category: str) -> tuple[str, int, str, str, list[Cit
             Citation(
                 title="RBI Integrated Ombudsman Scheme, 2021",
                 url="https://cms.rbi.org.in",
-                section="Section 8 & 11",
-                note="Single-window redressal for banks/NBFCs/UPI payment service providers.",
+                section="Clause 10 & 15",
+                note="Mandatory 30-day complaint window with the bank before escalation (Clause 10); CMS escalation with up to ₹20L compensation plus ₹1L mental agony (Clause 15).",
             )
         )
         citations.append(
