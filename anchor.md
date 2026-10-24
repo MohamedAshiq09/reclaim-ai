@@ -28,8 +28,9 @@ on-chain CommitPayment round-trip. Full handoff:
 `[docs/HANDOFF_LIVE_TEST.md](docs/HANDOFF_LIVE_TEST.md)` — friend does
 final polish + submission assets (deadline 17:50 IST).
 
-**Local commits not pushed** (user gates push): `b5740a9..e080793`,
-`2030a88` + this docs update — awaiting user's word.
+**Push status:** user pushed everything to `origin/main` — verified
+14:00 IST: local HEAD `6c65487` == `origin/main`, branch in sync
+(`git fetch` + `status -sb` observed).
 
 **Previous state (workflow session, 12:20 IST):**
 
