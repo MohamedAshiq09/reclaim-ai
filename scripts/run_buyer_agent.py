@@ -35,15 +35,15 @@ from uagents_core.contrib.protocols.chat import (
     chat_protocol_spec,
 )
 from uagents_core.contrib.protocols.payment import (
+    CancelPayment,
     CommitPayment,
     CompletePayment,
     Funds,
-    RejectPayment,
     RequestPayment,
     payment_protocol_spec,
 )
 
-from common.config import CONCIERGE_ADDRESS
+from common.config import AGENTVERSE_API_KEY, CONCIERGE_ADDRESS
 
 BUYER_SEED = "reclaimai_buyer_demo_seed_phase3_20261024"
 
@@ -51,6 +51,8 @@ buyer = Agent(
     name="reclaimai_buyer",
     seed=BUYER_SEED,
     port=8006,
+    mailbox=bool(AGENTVERSE_API_KEY),
+    agentverse="https://agentverse.ai",
     network="testnet",
 )
 
@@ -126,9 +128,9 @@ async def on_complete_payment(ctx: Context, sender: str, msg: CompletePayment):
     asyncio.get_event_loop().call_later(2.0, lambda: sys.exit(0))
 
 
-@payment_proto.on_message(RejectPayment)
-async def on_reject_payment(ctx: Context, sender: str, msg: RejectPayment):
-    ctx.logger.error(f"❌ Payment was rejected by Concierge: {msg.reason}")
+@payment_proto.on_message(CancelPayment)
+async def on_cancel_payment(ctx: Context, sender: str, msg: CancelPayment):
+    ctx.logger.error(f"❌ Payment was cancelled by Concierge: {msg.reason}")
     sys.exit(1)
 
 
@@ -141,8 +143,8 @@ async def start_demo(ctx: Context):
     ctx.logger.info(f"Target Agent:  {CONCIERGE_ADDRESS}")
     ctx.logger.info("=" * 65)
 
-    # Allow bureau to register endpoints
-    await asyncio.sleep(2.0)
+    # Allow network & Almanac to register endpoints
+    await asyncio.sleep(16.0)
 
     # Initiate payment inquiry
     init_msg = ChatMessage(
