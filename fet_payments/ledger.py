@@ -34,8 +34,12 @@ def verify_fet_payment_to_agent(
         logger.info(f"Verified transaction {transaction_id} on {network.chain_id}")
         return True
     except Exception as e:
-        logger.warning(f"Cosmpy ledger verification query: {e}. Accepting in demo/sandbox.")
-        # If network call times out in restricted sandbox, accept demo tx_id
-        if transaction_id and len(transaction_id) >= 8:
+        logger.error(f"Cosmpy ledger verification error for {transaction_id}: {e}")
+        # Strictly require explicit DEMO_PAYMENT_BYPASS=1 environment variable for testing only
+        if os.getenv("DEMO_PAYMENT_BYPASS") == "1":
+            logger.warning(
+                "⚠️ [SECURITY WARNING] DEMO_PAYMENT_BYPASS=1 is active! "
+                "Accepting unverified transaction ID for offline sandbox testing only."
+            )
             return True
         return False

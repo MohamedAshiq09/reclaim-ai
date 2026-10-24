@@ -10,10 +10,10 @@
 ## Key Statutory Provisions & Refund Timelines
 
 ### 1. Ticket Refund Timelines (CAR Section 3, Series M, Part II - Para 3.3)
-Under **Part II, Para 3.3.2**:
-- **Credit Card Bookings**: The airline must process and complete the refund within **seven (7) working days** of cancellation to the credit card account.
-- **Cash Bookings**: Refund must be made **immediately** across the ticket counter.
-- **Travel Agent / Online Travel Portals (OTAs)**: Under DGCA directives and CAR revisions, airlines must refund through the portal/agent within **fourteen (14) working days**, and the intermediary must disburse directly to the passenger without delay.
+Under **CAR Section 3, Series M, Part II, Para 3.3**:
+- **Credit Card Bookings**: The airline must process and complete the refund within **seven (7) days** of cancellation directly to the account of the credit-card holder.
+- **Cash Bookings**: Refund must be made **immediately** across the airline ticket counter.
+- **Travel Agent / Online Travel Portals (OTAs)**: The refund process through travel agents/portals shall be completed within **fourteen (14) working days**, with the primary onus resting on the airline.
 
 ### 2. Flight Cancellation & Delay Compensation (CAR Section 3, Series M, Part IV)
 Under **Part IV**:

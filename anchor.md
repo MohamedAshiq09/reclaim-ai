@@ -70,37 +70,41 @@ All 5 agents run on **Fetch.ai Testnet** with deterministic seeds:
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Consumer Protection (E-Commerce) Rules, 2020** | **Rule 4(4) & Rule 4(5)** | Grievance Officer appointment mandatory under 4(4); 48h acknowledgment and 30-day final redressal mandatory under 4(5). (NOT Rule 5(4)). | https://consumeraffairs.nic.in/acts-and-rules/consumer-protection/consumer-protection-e-commerce-rules-2020 | 2026-10-24 | **VERIFIED** |
 | **Consumer Protection Act, 2019** | **Section 2(9), 2(11), 2(47)** | Statutory rights against unfair trade practices and service deficiency. Unilateral refund rejections prohibited. | https://consumeraffairs.nic.in | 2026-10-24 | **VERIFIED** |
+| **Consumer Commission Pecuniary Jurisdiction** | **Rules 2021 (G.S.R. 886(E))** | District: <= ₹50 Lakhs; State: ₹50 Lakhs to ₹2 Crores; National: > ₹2 Crores. | https://consumeraffairs.nic.in | 2026-10-24 | **VERIFIED** |
 | **Consumer Commission Online Filing** | **Section 35 / e-Daakhil** | Digital complaint filing before Consumer Commissions without physical presence. | https://edaakhil.nic.in | 2026-10-24 | **VERIFIED** |
 | **National Consumer Helpline** | **NCH / INGRAM (1915)** | Official portal for registering consumer grievances. | https://consumerhelpline.gov.in | 2026-10-24 | **VERIFIED** |
-| **DGCA Airline Ticket Refunds** | **CAR Section 3, Series M, Part II (Para 3.3.2)** | 7-day refund for credit card cancellations; 14 working days for travel portal/agent bookings. (NOT Part IV). | https://www.dgca.gov.in | 2026-10-24 | **VERIFIED** |
+| **DGCA Airline Ticket Refunds** | **CAR Section 3, Series M, Part II (Para 3.3)** | 7-day refund for credit card cancellations directly to account; 14 working days for travel portal/agent bookings. (NOT Part IV). | https://www.dgca.gov.in | 2026-10-24 | **VERIFIED** |
 | **DGCA Cancellation/Delay Compensation** | **CAR Section 3, Series M, Part IV** | Refreshments for delays >2h; ₹5,000–₹10,000 compensation for unnotified cancellations. | https://www.dgca.gov.in | 2026-10-24 | **VERIFIED** |
-| **RBI Integrated Ombudsman Scheme 2021** | **Section 8 & 11** | Mandatory 30-day dispute window before bank; escalation to CMS portal with up to ₹20L compensation. | https://cms.rbi.org.in | 2026-10-24 | **VERIFIED** |
-| **ASI:One Interactive Cards** | **ACP Metadata v1** | `card_protocol_version: "1"`, `card_kind`, `requires_card_interaction: "true"`, JSON `card_payload`. | https://docs.agentverse.ai/documentation/advanced-usages/predefined-card-schemas | 2026-10-24 | **VERIFIED** |
+| **RBI Integrated Ombudsman Scheme 2021** | **RB-IOS 2021 Clause 10 & 15** | Mandatory 30-day dispute window before bank (Clause 10); escalation to CMS portal with up to ₹20L compensation + ₹1L mental agony (Clause 15). | https://cms.rbi.org.in | 2026-10-24 | **VERIFIED** |
+| **ASI:One Interactive Cards** | **ACP Metadata v1** | `card_protocol_version: "1"`, `card_kind`, `requires_card_interaction: "true"`, `is_terminal`, JSON `card_payload`. | https://docs.agentverse.ai/documentation/advanced-usages/predefined-card-schemas | 2026-10-24 | **VERIFIED** |
 | **Fetch.ai Payment Protocol** | **`payment_protocol_spec`** | Native FET direct payment seller flow with cosmpy verification. | https://innovationlab.fetch.ai/resources/docs/agent-transaction/agent-payment-protocol | 2026-10-24 | **VERIFIED** |
 
 ---
 
-## 6. Real vs Simulated/Faked Matrix
+## 6. Real vs Simulated/Faked Matrix & Integrity Disclosure
 
 | Feature | Real or Simulated? | Details & Mitigation |
 | :--- | :--- | :--- |
 | **Agentverse Registration** | **REAL** | All 5 agents registered via API; mailboxes confirmed active (HTTP 200). |
+| **Initial 10 Diagnostic Interactions** | **DIAGNOSTIC TEST DISCLOSURE** | During initial mailbox connection troubleshooting, 10 automated test envelopes were sent via developer script `send_batch()` to verify Agentverse mailbox polling and schema digests. **These were technical diagnostic tests, NOT organic consumer usage**, and are strictly documented as such. No synthetic traffic will ever be run again. |
 | **ASI:One LLM Reasoning** | **REAL** | Connected to live `https://api.asi1.ai/v1` via valid `ASI_ONE_API_KEY`. |
-| **Legal Corpus & Citations** | **REAL** | Verified against official gazettes; exact sections cited. |
+| **Legal Corpus & Citations** | **REAL** | Verified against official gazettes and regulatory orders; exact clauses cited. |
 | **Inter-Agent Communication** | **REAL** | Protocol models exchanging structured messages between agents. |
-| **Interactive Cards** | **REAL** | Predefined card schemas conforming strictly to wire format. |
-| **Email Notice Dispatch** | **SIMULATED** (if `RESEND_API_KEY` unset) | Without key, dispatcher logs and produces fallback text. With key, delivers via Resend API to `DEMO_RECIPIENT_OVERRIDE`. |
-| **Live Contact Lookup** | **HYBRID** | Curated table of top 10 Indian enterprises (Flipkart, Amazon, IndiGo, HDFC, etc.) + fallback. |
+| **Interactive Cards** | **REAL** | Predefined card schemas (`form`, `detail`, `review`, `carousel`) rendered live in ASI:One chat. |
+| **Email Notice Dispatch** | **HYBRID** | If `RESEND_API_KEY` is provided, delivers via Resend API to `DEMO_RECIPIENT_OVERRIDE`. Otherwise logs simulated dispatch. |
+| **Live Contact Lookup** | **HYBRID** | Curated verified enterprise grievance nodal officer registry. |
 | **Watcher Escalation** | **REAL** | `@on_interval` background loop fires on deadline and inserts events in `cases.db`. |
-| **Payment Verification** | **REAL** | Uses `cosmpy` against testnet ledger with sandbox fallback. |
+| **Payment Verification** | **STRICT ON-CHAIN** | Strict query via `cosmpy` on testnet ledger. Offline sandbox acceptance is strictly prohibited unless `DEMO_PAYMENT_BYPASS=1` is explicitly set with loud warning logs. |
 
 ---
 
 ## 7. Decisions Log
 1. **Rule 4(4) & 4(5) vs 5(4)**: Fixed citation from Rule 5(4) to Rule 4(4) & 4(5) of the E-Commerce Rules, 2020 because Rule 4 explicitly governs the Grievance Officer duties and timelines.
-2. **DGCA Part II vs Part IV**: Fixed citation from Part IV to Part II (Para 3.3.2) for airline ticket refunds (7 days credit card, 14 days portal), reserving Part IV for cancellation/delay compensation.
-3. **Mailbox vs Endpoint in uAgents**: Discovered that passing `endpoint` overrides and disables `mailbox=True`. Fixed all agents to set `endpoint=None` when `AGENTVERSE_API_KEY` is present.
-4. **Single-Process Bureau Runner**: Provided `run_bureau.py` for local convenience, while preserving independent startup capability (`python agents/concierge.py`).
+2. **DGCA Part II vs Part IV**: Fixed citation from Part IV to Part II (Para 3.3) for airline ticket refunds (7 days credit card, 14 days portal), reserving Part IV for cancellation/delay compensation.
+3. **RB-IOS 2021 Clause 10 & 15**: Verified RBI Ombudsman scheme clauses replacing informal section citations.
+4. **Pecuniary Jurisdiction (Rules 2021)**: Verified District Commission threshold at ₹50 Lakhs (revised from 2019 Act ₹1 Crore).
+5. **Strict Payment Security**: Removed silent sandbox payment bypass; require `DEMO_PAYMENT_BYPASS=1` explicitly if testing offline.
+6. **Card Metadata Compliance**: Confirmed both `requires_card_interaction` and `is_terminal` are correctly handled according to Predefined Card Schemas v1.
 
 ---
 
