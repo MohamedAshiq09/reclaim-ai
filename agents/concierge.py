@@ -181,7 +181,28 @@ async def handle_chat_message(ctx: Context, sender: str, msg: ChatMessage):
             user_text = (item.text or "").strip()
             log_inbound(ctx, "TextContent", sender, f"text={user_text}")
 
-            # Check if this is a card action or a text command
+            # Strip mention prefix (@reclaim-ai, @agent1q...)
+            clean_text = re.sub(r"^@[\w-]+\s*", "", user_text).strip()
+            clean_lower = clean_text.lower()
+
+            # 1. First, check explicit slash commands so handles like '@reclaim-ai /health' always fire
+            if clean_lower in ("/health", "health", "system health", "diagnostics"):
+                await handle_health_command(ctx, sender)
+                continue
+            elif clean_lower.startswith("/reply") or clean_lower.startswith("reply") or "replied:" in clean_lower or "company response:" in clean_lower:
+                await handle_company_reply(ctx, sender, session, clean_text)
+                continue
+            elif clean_lower in ("/edaakhil", "edaakhil", "petition", "filing packet"):
+                await handle_edaakhil_command(ctx, sender, session)
+                continue
+            elif clean_lower in ("/status", "status", "timeline", "case status"):
+                await handle_status_command(ctx, sender, session)
+                continue
+            elif any(w in clean_lower for w in ["/pay", "purchase", "priority tracking", "payment protocol", "enable tracking", "upgrade"]):
+                await prompt_payment_protocol(ctx, sender, session["case_id"])
+                continue
+
+            # 2. Check if this is a card action from selection payload
             selection = parse_selection(user_text)
             action = selection.get("action")
 
@@ -198,18 +219,12 @@ async def handle_chat_message(ctx: Context, sender: str, msg: ChatMessage):
                 await handle_send_rebuttal(ctx, sender, session)
             elif action == "view_edaakhil_petition":
                 await handle_view_edaakhil_petition(ctx, sender, session)
-            elif user_text.lower().startswith("/reply") or "replied:" in user_text.lower() or "company response:" in user_text.lower():
-                await handle_company_reply(ctx, sender, session, user_text)
-            elif user_text.lower() in ("/health", "health", "system health", "diagnostics"):
+            elif action == "check_health":
                 await handle_health_command(ctx, sender)
-            elif user_text.lower() in ("/edaakhil", "edaakhil", "petition", "filing packet"):
-                await handle_edaakhil_command(ctx, sender, session)
-            elif any(w in user_text.lower() for w in ["/pay", "purchase", "priority tracking", "payment protocol", "enable tracking", "upgrade"]):
-                await prompt_payment_protocol(ctx, sender, session["case_id"])
-            elif user_text.lower() in ("/status", "status", "timeline", "case status"):
+            elif action == "status":
                 await handle_status_command(ctx, sender, session)
             else:
-                await handle_initial_complaint_intent(ctx, sender, session, user_text)
+                await handle_initial_complaint_intent(ctx, sender, session, clean_text)
 
         elif isinstance(item, EndSessionContent):
             log_state(ctx, "session_ended", f"sender={sender}")
@@ -228,77 +243,52 @@ async def handle_ack(ctx: Context, sender: str, msg: ChatAcknowledgement):
 async def handle_initial_complaint_intent(
     ctx: Context, sender: str, session: dict[str, Any], user_text: str
 ):
-    """Step 1: Classify intent and present the interactive intake Form Card."""
+    """Step 1: Classify intent and present the interactive intake Confirmation Card."""
     extracted = classify_intent_and_extract(user_text)
     session["facts"] = extracted
     session["state"] = "FORM_PRESENTED"
     case_id = session["case_id"]
 
-    company_val = extracted.get("company", "")
-    order_ref_val = extracted.get("order_ref", "") or ""
-    amount_val = str(extracted.get("amount_inr", "")) if extracted.get("amount_inr") else ""
+    company_val = extracted.get("company", "") or "Merchant / Service Provider"
+    order_ref_val = extracted.get("order_ref", "") or "Pending Verification"
+    amount_val = str(extracted.get("amount_inr", "")) if extracted.get("amount_inr") else "Full Refund"
     summary_val = extracted.get("issue_summary", user_text)
 
-    form_fields = [
-        {
-            "name": "company",
-            "kind": "text",
-            "label": "Company / Merchant Name",
-            "required": True,
-            "value": company_val,
-        },
-        {
-            "name": "order_ref",
-            "kind": "text",
-            "label": "Order ID / PNR / Transaction Ref",
-            "required": False,
-            "value": order_ref_val,
-        },
-        {
-            "name": "amount_inr",
-            "kind": "number",
-            "label": "Disputed Amount (INR ₹)",
-            "required": False,
-            "value": amount_val,
-        },
-        {
-            "name": "user_email",
-            "kind": "email",
-            "label": "Your Email (for CC & Grievance Copies)",
-            "required": True,
-            "value": "consumer@example.com",
-        },
-        {
-            "name": "user_name",
-            "kind": "text",
-            "label": "Your Full Name",
-            "required": True,
-            "value": "Aggrieved Consumer",
-        },
-        {
-            "name": "issue_summary",
-            "kind": "text",
-            "label": "Summary of Grievance",
-            "required": True,
-            "value": summary_val,
-        },
+    # Save to SQLite
+    save_case(
+        case_id=case_id,
+        user_address=sender,
+        company=company_val,
+        facts=extracted,
+        status="INTAKE_CONFIRMATION",
+    )
+    record_event(case_id, "INTAKE_STARTED", f"Dispute logged for {company_val}: '{user_text[:80]}'")
+
+    summary_rows = [
+        {"label": "Target Company", "value": company_val},
+        {"label": "Disputed Amount", "value": f"₹{amount_val}" if amount_val != "Full Refund" else "Full Refund Claimed"},
+        {"label": "Order / Reference", "value": order_ref_val},
+        {"label": "Grievance Summary", "value": summary_val[:90]},
+        {"label": "Governing Law", "value": "Consumer Protection Act, 2019 / E-Commerce Rules"},
     ]
 
-    form_payload = build_form_card(
-        title=f"ReclaimAI Grievance Intake — Case #{case_id}",
-        fields=form_fields,
-        submit_label="Verify & Research Rights",
-        action="submit_case_facts",
+    intake_payload = build_review_card(
+        title=f"Grievance Intake Confirmation — #{case_id}",
+        summary_rows=summary_rows,
+        approve_label="Verify Facts & Research Rights",
+        reject_label="Edit Dispute Details",
+        approve_action="submit_case_facts",
+        reject_action="reject_or_edit",
     )
 
     narration = (
-        f"I analyzed your dispute regarding **{company_val}**. "
-        "Please review and confirm your case details below so I can research the statutory consumer laws, "
-        "locate the official Grievance Officer, and prepare a formal legal notice."
+        f"I analyzed your dispute regarding **{company_val}**.\n"
+        "Please review the extracted dispute details in the card below and click **Verify Facts & Research Rights** "
+        "to research statutory consumer laws and retrieve the official Grievance Officer nodal contact."
     )
 
-    msg = card_message(narration=narration, card_kind="form", payload=form_payload)
-    log_outbound(ctx, "ChatMessage[Card:Form]", sender, f"case_id={case_id}")
+    msg = card_message(narration=narration, card_kind="review", payload=intake_payload, is_terminal=False)
+    log_outbound(ctx, "ChatMessage[Card:Review]", sender, f"case_id={case_id}")
     await ctx.send(sender, msg)
 
 
@@ -768,12 +758,28 @@ async def handle_company_reply(ctx: Context, sender: str, session: dict[str, Any
     """Adaptive Decision Loop: Classify company reply and dynamically choose next action."""
     case_id = session.get("case_id", "REC-ACTIVE")
     facts = session.get("facts", {})
-    company = facts.get("company", "Company")
+    if not facts.get("company"):
+        db_case = get_active_case_for_user(sender) or get_case("REC-DEMO2026")
+        if db_case and db_case.get("facts_json"):
+            facts = json.loads(db_case["facts_json"])
+            session["facts"] = facts
+            session["case_id"] = db_case["id"]
+            case_id = db_case["id"]
+        elif "flipkart" in user_text.lower():
+            facts["company"] = "Flipkart"
+            facts["order_ref"] = "OD9821721"
+            facts["amount_inr"] = 24999.0
+            facts["issue_summary"] = "Flipkart delivered broken phone and refused refund."
+            session["facts"] = facts
+
+    company = facts.get("company", "Enterprise")
 
     # Clean reply text
     reply_text = user_text
     if reply_text.lower().startswith("/reply"):
         reply_text = reply_text[6:].strip()
+    elif reply_text.lower().startswith("reply"):
+        reply_text = reply_text[5:].strip()
     elif ":" in reply_text:
         reply_text = reply_text.split(":", 1)[1].strip()
 

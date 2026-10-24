@@ -146,7 +146,7 @@ def build_reply_decision_card(
     action_label: str,
     action_name: str,
 ) -> dict[str, Any]:
-    """Build an interactive card reflecting the agent's dynamic reply decision."""
+    """Build an interactive Review Card reflecting the agent's dynamic reply decision."""
     sentiment = classification.get("sentiment", "stalling").upper()
     reasoning = classification.get("reasoning", "")
     violation = classification.get("statutory_violation", "")
@@ -156,20 +156,19 @@ def build_reply_decision_card(
         {"label": "Enterprise", "value": company},
         {"label": "Reply Classification", "value": sentiment},
         {"label": "Agent Decision", "value": classification.get("recommended_action", "").upper()},
-        {"label": "Legal Analysis", "value": reasoning},
+        {"label": "Legal Analysis", "value": reasoning[:100]},
     ]
     if violation:
         rows.append({"label": "Statutory Breach", "value": violation})
 
-    return {
-        "title": f"Decision Loop: Company Response Evaluated — #{case_id}",
-        "subtitle": f"Status: {sentiment}",
-        "fields": rows,
-        "primary_cta": {
-            "label": action_label,
-            "selection": {"action": action_name, "case_id": case_id},
-        },
-    }
+    return build_review_card(
+        title=f"Decision Loop: Corporate Response Evaluated — #{case_id}",
+        summary_rows=rows,
+        approve_label=action_label,
+        reject_label="Edit Case / Cancel",
+        approve_action=action_name,
+        reject_action="reject_or_edit",
+    )
 
 
 def build_edaakhil_card(case_id: str, edaakhil_data: dict[str, Any]) -> dict[str, Any]:
@@ -205,27 +204,31 @@ def build_health_card(components: list[dict[str, str]]) -> dict[str, Any]:
     )
 
 
-
-
 def parse_selection(text: str) -> dict[str, Any]:
     """Parse card selection from user or planner into a dictionary.
 
-    Handles direct JSON from @mention interactions as well as heuristic
-    key-value extraction from planner prose.
+    Handles direct JSON from @mention interactions as well as embedded JSON payloads.
     """
     if not text:
         return {}
 
+    # Strip mention prefixes like @reclaim-ai or @agent1q...
+    cleaned = re.sub(r"^@[\w-]+\s*", "", text.strip())
+
+    # Never treat explicit slash commands as card selection clicks
+    if cleaned.startswith("/"):
+        return {}
+
     # 1. Try direct JSON parsing
     try:
-        data = json.loads(text)
+        data = json.loads(cleaned)
         if isinstance(data, dict):
             return data
     except Exception:
         pass
 
     # 2. Try finding JSON inside markdown code blocks or brackets
-    json_match = re.search(r"\{.*\}", text, re.DOTALL)
+    json_match = re.search(r"\{[^{}]*\}", cleaned, re.DOTALL)
     if json_match:
         try:
             data = json.loads(json_match.group(0))
@@ -234,22 +237,12 @@ def parse_selection(text: str) -> dict[str, Any]:
         except Exception:
             pass
 
-    # 3. Fallback: extract common key-value pairs from text
+    # 3. Fallback: only match explicit confirmation / rejection phrases
     extracted: dict[str, Any] = {"raw": text}
-    lower = text.lower()
-    if "approve" in lower or "confirm" in lower:
+    lower = cleaned.lower()
+    if ("approve" in lower or "confirm" in lower) and not ("not approve" in lower or "don't approve" in lower):
         extracted["action"] = "approve_dispatch"
-    elif "reject" in lower or "cancel" in lower or "edit" in lower:
+    elif lower in ("reject", "cancel", "edit", "no", "reject & edit", "cancel notice"):
         extracted["action"] = "reject_or_edit"
-    elif "proceed" in lower or "continue" in lower or "draft" in lower:
-        extracted["action"] = "proceed_to_draft"
-    elif "submit" in lower:
-        extracted["action"] = "submit_case_facts"
-
-    # Try extracting named fields if present in text
-    for field in ["company", "order_ref", "amount_inr", "order_date", "user_email", "user_name"]:
-        m = re.search(rf"{field}[:=]\s*([^\s,;]+)", text, re.IGNORECASE)
-        if m:
-            extracted[field] = m.group(1).strip()
 
     return extracted
