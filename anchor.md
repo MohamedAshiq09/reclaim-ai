@@ -9,43 +9,62 @@
 
 ## 0. Live Session State
 
-**Last updated:** 2026-10-24 12:20 IST — after pulling teammate's 5 commits
-and re-verifying.
+**Last updated:** 2026-10-24 14:05 IST — chat reliability fix session.
 
 **Last completed (this session):**
-- Agentic workflow layer created on user instruction: `AGENTS.md` (routing +
-  rules contract), `.opencode/agents/` 6 subagents (concierge-builder,
-  pipeline-builder, common-builder, research-agent, code-review-agent,
-  git-commit-agent), `code-review-gate`/`git-commit-hygiene`/
-  `research-source-protocol` skills, and `opencode.json` (skills paths).
-- Mid-session the user relocated all fetched skills into `.opencode/skills/`
-  (now 11 skills) and deleted `.agent/.agents/.claude/.cursor` skill trees —
-  references in `AGENTS.md`/`opencode.json`/`anchor.md` updated to match.
-- Pulled teammate's remote batch `a68cbf9..c9be829` with `git stash` +
-  `pull --ff-only` + `stash pop`; resolved the `anchor.md` conflict (§8, §12)
-  by merging both sides (see §14 Reconciliation Log).
-- Re-verified the suite on the new HEAD: `TESTING=1 PYTHONPATH=. .venv/bin/pytest
-  tests/ -q` → 15 passed.
-
-**Last completed (teammate, pulled this session):**
-- `c9be829` — payment protocol schema fields fixed, `scripts/failure_drill.py`
-  added (closes the earlier missing-script finding), README + anchor updated.
-- `1722449` — payment intent routed in concierge, buyer role set in
-  payment protocol. `fec6b72`/`c64e4f2` — buyer Almanac endpoint fixes.
-- `a68cbf9` — form card replaced with review card for guaranteed ASI:One
-  rendering; mention command routing fixed (`agents/concierge.py`,
-  `common/cards.py`).
-
-**In progress right now:**
-- Workflow commits + push (on user instruction). `docs/LIVE_TEST_CHECKLIST.md`
-  Phases 2–5 and the demo video are for the user to run.
+- Live ASI:One bug report triaged into `docs/TICKETS.md` (T1–T10) after a
+  full audit of `agents/**` + `common/**`. Fixed all blockers before the
+  15:30 demo freeze.
+- **T1 root causes (reproduced offline, double crash):**
+  `agents/concierge.py` used `re.sub` without importing `re` (every
+  TextContent died right after the welcome) AND `save_case(user_address=,
+  facts=)` violated `common/db.py:save_case(case_id, user_addr, category,
+  company, facts_json, ...)` (intake TypeError). Fixed in `abdc64e`.
+- **T2**: rebuttal `DispatchRequest(tier=1)` — nonexistent field
+  (pydantic v1 extra) — removed (`abdc64e`, regression test `dba8a99`).
+- **T3/T4**: blocking sync `OpenAI` calls (no timeout) executed by
+  concierge/`classify_intent_and_extract`, `classify_company_reply`,
+  drafter `generate_complaint_draft`, and dispatcher
+  `resend.Emails.send` — froze the single-loop Bureau. Now: client
+  `timeout=LLM_TIMEOUT_S` (env, default 20s), worker-thread offload +
+  `asyncio.wait_for` (intent 12s, draft 45s, email 15s), deterministic
+  fallbacks (`commult determinate draft`, `heuristic_extraction`)
+  (`9745d79`, `1c32041`).
+- **T5**: `/ping` (instant pong + step hint) and `/cardtest` (review-card
+  diagnostic) added; instant "Analyzing…" text precedes LLM intent work;
+  greeting AND complaint processed on the first message (`abdc64e`).
+- **T6**: `parse_selection` prose rule now requires short whole-message
+  commands (≤48 chars) — complaint prose containing "approve"/"confirm"
+  is no longer misrouted into card actions; typed equivalents `1`/`2`
+  map to the pending card per session state, `retry` re-runs the
+  pending primary step (`b5740a9`, `abdc64e`).
+- **T7**: every content item + card action crash-proofed; failures send
+  a friendly text naming the step and log via `log_error` (`abdc64e`).
+- **T8**: researcher citations aligned to Verified Facts Index §5:
+  RB-IOS Clause 10 & 15 (was Section 8 & 11); DGCA Part II Para 3.3
+  (was 3.3.2) (`2530d6d`).
+- **T9**: `/health` card now derives statuses from real config (LLM key,
+  Resend key, DEMO_MODE, DB probe) with no fabricated latency numbers
+  (`b5740a9`, `abdc64e`).
+- **T10**: `.env.example` gained `LLM_TIMEOUT_S`/`DRAFT_TIMEOUT_S`;
+  `docs/LIVE_TEST_CHECKLIST.md` gained Phase 0 responsiveness checks
+  (`9330be1`, this commit).
 
 **Verified this session (commands observed):**
-- `TESTING=1 PYTHONPATH=. .venv/bin/pytest tests/ -q` → **15 passed** on HEAD
-  `a68cbf9` (12:20 IST, after pull).
-- `.venv` rebuilt with `python3.11` (homebrew default 3.14 breaks
-  `uagents` import — "no current event loop"). Always use
-  `python3.11 -m venv .venv`.
+- `TESTING=1 PYTHONPATH=. .venv/bin/pytest tests/ -q` → **22 passed**
+  (15 pre-existing + 7 new flow tests) on HEAD `9330be1`, 14:02 IST.
+- Offline smoke: `classify_intent_and_extract` + `deterministic_draft` +
+  `generate_complaint_draft` round-trips; `agents.concierge` imports with
+  all new handlers present; `.venv/bin/python run_bureau.py` NOT started
+  by the agent (mailbox traffic is user hands-off).
+
+**NOT TESTED (user must run live):**
+- Real ASI:One chat: Phase 0 steps 0.1–0.4 then full Phase 1 — bureau
+  restart required: `.venv/bin/python run_bureau.py` +
+  `tail -f logs/live.log`.
+- Card rendering thresholds in ASI:One UI (any payload gap beyond
+  Predefined Card Schemas v1 needs playground evidence).
+- Resend live path (key unset → simulated dispatch is the demo gate).
 
 ---
 
@@ -158,10 +177,14 @@ All 5 agents run on **Fetch.ai Testnet** with deterministic seeds:
 ---
 
 ## 8. Known Issues and Failing Tests
-- **Failing Tests**: **ZERO** — verified 2026-10-24 12:05 IST (`TESTING=1 PYTHONPATH=. .venv/bin/pytest tests/ -q` → 15 passed) on HEAD `a68cbf9` after pull.
+- **Failing Tests**: **ZERO** — verified 2026-10-24 14:02 IST
+  (`TESTING=1 PYTHONPATH=. .venv/bin/pytest tests/ -q` → 22 passed) on
+  HEAD `9330be1` (chat reliability fix session; see docs/TICKETS.md).
+- **Live chat validation** post-fix is the critical open item: the user
+  must restart the Bureau and run Phase 0 (0.1–0.4) of
+  `docs/LIVE_TEST_CHECKLIST.md` from ASI:One before the demo freeze.
 - **README Quick Start uses `uv`**: `uv` is not installed on this machine; the verified path is `python3.11 -m venv .venv` (`python3.11` lives at `~/.local/bin/python3.11`). Documented in `AGENTS.md` section 3; README line itself is teammate's call.
 - **Python 3.14 breaks uAgents imports** ("no current event loop" at import time) — keep the Python 3.11 venv; homebrew default `python3` is 3.14.6.
-- **Uncommitted skill-dir cleanup**: the working tree deletes the four tracked skill trees — `.agent/skills/`, `.agents/skills/`, `.claude/skills/`, `.cursor/skills/` — while all skills now live locally in `.opencode/skills/` (user relocation). Committing the deletes + `.opencode/skills/**` contents awaits the user's one-liner decision; tracked skill copies still exist at `origin/main` meanwhile.
 - **Proactive Notification**: ASI:One chat sessions cannot be initiated proactively by the agent if the user closes the window. Escalation updates are delivered reliably through the `/status` command, which renders the live chronological audit trail card.
 
 ---
@@ -187,7 +210,9 @@ All 5 agents run on **Fetch.ai Testnet** with deterministic seeds:
 
 ## 11. Next Actions for Final Submission
 1. **Launch Bureau Runner**: Run `python run_bureau.py` (daemonized/persistent).
-2. **ASI:One Live Validation**: Open ASI:One, send prompt, verify form card, rights card, approval, real Resend dispatch, `/reply`, and `/health`.
+2. **ASI:One Live Validation**: Run Phase 0 diagnostics first (`/ping`,
+   `/cardtest`, first-message complaint, `/health` — see
+   `docs/LIVE_TEST_CHECKLIST.md`), then the full Phase 1 intake flow.
 3. **Copy Public Shared Chat URL**: Click "Share Chat" inside ASI:One.
 4. **Record 3–5 min Demo Video**: Follow `docs/demo_script.md`.
 5. **Dashboard Agent Submission**: Submit repo URL + video URL + shared chat URL before 17:50 IST.
@@ -233,5 +258,8 @@ this config file.
   merging both sides; our `§0/§2/§13` preserved. Local skill-tree deletions
   `.agent/.agents/.claude/.cursor` + the skills' new home `.opencode/skills/`
   discovered post-pop; AGENTS/opencode.json/anchor references updated to
-  `.opencode/skills/`. Deletion batch remains uncommitted pending the user's
-  structure decision (§8). Stash dropped after pop.
+  `.opencode/skills/`. Deletion batch committed by the user as `ef96423 add`
+  13:02 IST. Stash dropped after pop.
+- **2026-10-24 ~14:05 IST**: Chat reliability fix session (this one): 8
+  atomic commits `b5740a9..9330be1` per docs/TICKETS.md T1–T10; suite
+  15→22 passed offline. Live ASI:One validation pending (user).

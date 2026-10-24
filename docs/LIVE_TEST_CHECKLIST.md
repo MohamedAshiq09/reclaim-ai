@@ -19,6 +19,21 @@ This checklist provides step-by-step procedures to test ReclaimAI live in **ASI:
 
 ## Test Suite Walkthrough
 
+### Phase 0: Responsiveness Diagnostics (run these FIRST, ~60 seconds)
+
+Added 2026-10-24 after the live chat reliability fix (`abdc64e` + suite
+`dba8a99`). Verify the agent speaks in text within ~3 seconds and cards render
+before running the full flow:
+
+| Step | Input Text in ASI:One | Expected Output | Verified? |
+| :--- | :--- | :--- | :--- |
+| **0.1** | `/ping` | Instant text: `pong — concierge alive` with mailbox state, active case, and current step. No card. | [ ] |
+| **0.2** | `/cardtest` | A **Card Diagnostic** review card renders with working buttons; typed `1` opens `/health`, typed `2` opens `/status`. | [ ] |
+| **0.3** | Complaint as the FIRST message (everything in one message): `Flipkart delivered a broken Samsung Galaxy phone worth ₹24,999, order OD123, and refused my refund` | You get: greeting + instant "Analyzing…" text + a **Grievance Intake Confirmation** review card. Reply `1` to confirm. | [ ] |
+| **0.4** | `/health` | Honest configuration snapshot card (LIVE KEY SET vs FALLBACK HEURISTICS, LIVE vs SIMULATED email) — no fabricated latency numbers. | [ ] |
+
+---
+
 ### Phase 1: Direct ASI:One Chat & Intake Flow
 
 | Step | Action | Input Text in ASI:One | Expected Output | Verified? |
