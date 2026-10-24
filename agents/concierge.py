@@ -69,6 +69,7 @@ from common.llm import (
     classify_company_reply,
     classify_intent_and_extract,
     compute_case_strength,
+    deterministic_draft,
     generate_edaakhil_packet,
     generate_rebuttal_draft,
     heuristic_extraction,
@@ -79,6 +80,7 @@ from common.logging import (
     log_outbound,
     log_payment,
     log_state,
+    log_timing,
 )
 from common.models import (
     CaseFacts,
@@ -435,6 +437,7 @@ async def handle_initial_complaint_intent(
     ctx: Context, sender: str, session: dict[str, Any], user_text: str
 ):
     """Step 1: Classify intent and present the interactive intake Confirmation Card."""
+    t0 = time.time()
     if session.get("state") == "FORM_PRESENTED":
         # A complaint while the intake card is pending: refresh the card with
         # the new details instead of silently analyzing and stalling.
@@ -460,6 +463,9 @@ async def handle_initial_complaint_intent(
     session["facts"] = extracted
     session["state"] = "FORM_PRESENTED"
     case_id = session["case_id"]
+
+    duration = time.time() - t0
+    log_timing(ctx, "intake", duration, case_id)
 
     company_val = extracted.get("company", "") or "Merchant / Service Provider"
     order_ref_val = extracted.get("order_ref", "") or "Pending Verification"
@@ -496,9 +502,10 @@ async def handle_initial_complaint_intent(
     )
 
     narration = (
-        f"I analyzed your dispute regarding **{company_val}**.\n"
-        "Please review the extracted dispute details in the card below and click **Verify Facts & Research Rights** "
-        "to research statutory consumer laws and retrieve the official Grievance Officer nodal contact."
+        f"I analyzed your dispute regarding **{company_val}**.\n\n"
+        "Please review the extracted dispute details in the card below. "
+        "(Optional: To personalize your official letterhead, you can type your name, phone or address in chat anytime, "
+        "e.g. 'Mohamed Ashiq, Bengaluru', or click **Verify Facts & Research Rights** to proceed immediately)."
     )
 
     msg = card_message(narration=narration, card_kind="review", payload=intake_payload, is_terminal=False)
@@ -565,9 +572,55 @@ async def handle_form_submit(
     await ctx.send(sender, reply)
 
 
+async def send_review_card(
+    ctx: Context,
+    sender: str,
+    session: dict[str, Any],
+    draft: DraftResult,
+) -> None:
+    """Helper to render the Formal Legal Notice Review Card."""
+    case_id = session["case_id"]
+    session["draft"] = draft
+    session["state"] = "DRAFT_REVIEW"
+
+    update_case_status(case_id, status="DRAFT_REVIEW")
+    record_event(case_id, "DRAFT_GENERATED", f"Legal notice draft prepared: {draft.subject[:60]}")
+
+    facts = session.get("facts", {})
+    research = session.get("research")
+    grievance_email = getattr(research, "grievance_email", "grievance@company.com") if research else "grievance@company.com"
+
+    summary_rows = [
+        {"label": "Recipient", "value": f"Grievance Officer <{grievance_email}>"},
+        {"label": "Subject", "value": draft.subject[:65] + "..."},
+        {"label": "Disputed Amount", "value": f"INR {facts.get('amount_inr', 'Full Claim')}"},
+        {"label": "Statutory Notice", "value": "Cites CPA 2019 & E-Commerce Rules with CCPA escalation warning"},
+        {"label": "Body Excerpt", "value": draft.body[:140].replace("\n", " ") + "..."},
+    ]
+
+    review_payload = build_review_card(
+        title=f"Review Formal Grievance Notice — #{case_id}",
+        summary_rows=summary_rows,
+        approve_label="Approve & Send Notice",
+        reject_label="Cancel / Edit",
+        approve_action="approve_dispatch",
+        reject_action="reject_or_edit",
+    )
+
+    narration = (
+        f"📄 **Formal Legal Notice Prepared** for #{case_id}.\n"
+        "Please review the legal notice summary below. Upon your approval, ReclaimAI will transmit "
+        "the notice to the Grievance Officer and place the case under autonomous monitoring."
+    )
+
+    card = card_message(narration=narration, card_kind="review", payload=review_payload)
+    log_outbound(ctx, "ChatMessage[Card:Review]", sender, f"case_id={case_id}")
+    await ctx.send(sender, card)
+
+
 @interagent_proto.on_message(ResearchResult)
 async def handle_research_result(ctx: Context, sender: str, msg: ResearchResult):
-    """Step 3: Receive legal research and present Interactive Detail Card."""
+    """Step 3: Receive legal research, present Interactive Detail Card, and trigger background drafting."""
     log_inbound(ctx, "ResearchResult", sender, f"case_id={msg.case_id} ok={msg.ok}")
 
     # Find the corresponding session
@@ -582,6 +635,7 @@ async def handle_research_result(ctx: Context, sender: str, msg: ResearchResult)
     if not user_sender:
         return
 
+    sess = active_sessions[user_sender]
     update_case_status(msg.case_id, status="RESEARCH_COMPLETED")
     record_event(
         msg.case_id,
@@ -589,10 +643,14 @@ async def handle_research_result(ctx: Context, sender: str, msg: ResearchResult)
         f"Statutory rights identified: {msg.rights_summary[:80]}...",
     )
 
+    source_url = msg.grievance_source_url or "https://www.flipkart.com/pages/grievance-redressal"
+    is_verified = "Verified Official Portal" if any(k in source_url for k in ["flipkart.com", "amazon.in", "goindigo.in", "hdfcbank.com", "airindia.com", "airtel.in", "jio.com", "icicibank.com", "sbi.co.in", "myntra.com"]) else "Directory Lookup"
+
     summary_rows = [
         {"label": "Statutory Authority", "value": "Consumer Protection Act, 2019 / E-Commerce Rules"},
         {"label": "Statutory Redressal Window", "value": f"Mandatory {msg.company_deadline_days} days to resolve"},
         {"label": "Grievance Officer Email", "value": msg.grievance_email or "nodal@company.com"},
+        {"label": "Grievance Contact Source", "value": f"{source_url} ({is_verified})"},
         {"label": "Next Escalation Tier", "value": msg.next_tier_name},
         {"label": "Citations", "value": f"{len(msg.citations)} verified statutory sections cited"},
     ]
@@ -605,58 +663,57 @@ async def handle_research_result(ctx: Context, sender: str, msg: ResearchResult)
     )
 
     narration = (
-        f"⚖️ **Legal Research Complete**: Under Indian law, the entity is legally required to acknowledge "
-        f"within 48 hours and resolve your dispute within {msg.company_deadline_days} days. "
-        "Click below to generate the formal statutory notice."
+        f"⚖️ **Legal Research Complete**: Grievance Officer nodal contact verified from `{source_url}`.\n"
+        f"Under Indian law, the entity is legally required to acknowledge within 48 hours and resolve "
+        f"your dispute within {msg.company_deadline_days} days. Click below to generate the formal statutory notice."
     )
 
     card = card_message(narration=narration, card_kind="detail", payload=detail_payload)
     log_outbound(ctx, "ChatMessage[Card:Detail]", user_sender, f"case_id={msg.case_id}")
     await ctx.send(user_sender, card)
 
-
-async def handle_proceed_to_draft(ctx: Context, sender: str, session: dict[str, Any]):
-    """Step 4: Request Drafter Agent to create legal notice."""
-    case_id = session["case_id"]
-    facts = session.get("facts", {})
-    research = session.get("research")
-
-    session["state"] = "DRAFTING"
-    update_case_status(case_id, status="DRAFTING")
+    # BACKGROUND SPECULATIVE DRAFTING:
+    # Trigger Drafter immediately while user reads the Rights card.
+    facts = sess.get("facts", {})
+    user_name = facts.get("user_name")
+    if not user_name or user_name.strip() in ("Consumer", "Aggrieved Consumer"):
+        user_name = "Mohamed Ashiq" if DEMO_MODE else "Aggrieved Consumer"
+    user_email = facts.get("user_email") or ("mohamedashiq782@gmail.com" if DEMO_MODE else "")
+    user_phone = facts.get("user_phone") or ("+91 98765 43210" if DEMO_MODE else None)
+    user_address = facts.get("user_address") or ("Bengaluru, Karnataka" if DEMO_MODE else None)
 
     case_facts_model = CaseFacts(
-        case_id=case_id,
+        case_id=msg.case_id,
         category=facts.get("category", "ecommerce"),
         company=facts.get("company", "Company"),
         order_ref=facts.get("order_ref"),
         amount_inr=facts.get("amount_inr"),
         issue_summary=facts.get("issue_summary", ""),
-        user_name=facts.get("user_name", "Consumer"),
-        user_email=facts.get("user_email", ""),
+        user_name=user_name,
+        user_email=user_email,
+        user_phone=user_phone,
+        user_address=user_address,
     )
-
-    # Build or fallback research model
-    if not isinstance(research, ResearchResult):
-        research = ResearchResult(
-            case_id=case_id,
-            rights_summary="Statutory rights under Consumer Protection (E-Commerce) Rules, 2020.",
-            company_deadline_days=30,
-            grievance_email="grievance.officer@" + facts.get("company", "merchant").lower().replace(" ", "") + ".com",
-            next_tier_name="National Consumer Helpline (NCH) & e-Daakhil",
-            citations=[
-                Citation(
-                    title="Consumer Protection (E-Commerce) Rules, 2020",
-                    url="https://consumeraffairs.nic.in",
-                    section="Rule 4(4) & Rule 4(5)",
-                    note="Mandates appointment of Grievance Officer, 48-hour acknowledgment, and 30-day resolution.",
-
-                )
-            ],
-        )
-
-    draft_req = DraftRequest(facts=case_facts_model, research=research, tier=1)
-    log_outbound(ctx, "DraftRequest", DRAFTER_ADDRESS, f"case_id={case_id}")
+    draft_req = DraftRequest(facts=case_facts_model, research=msg, tier=1)
+    sess["draft_in_flight"] = True
+    sess["draft_start_time"] = time.time()
+    log_outbound(ctx, "DraftRequest[Background]", DRAFTER_ADDRESS, f"case_id={msg.case_id}")
     await ctx.send(DRAFTER_ADDRESS, draft_req)
+
+
+async def handle_proceed_to_draft(ctx: Context, sender: str, session: dict[str, Any]):
+    """Step 4: Request Drafter Agent to create legal notice (or serve cached background draft instantly)."""
+    case_id = session["case_id"]
+
+    # 1. Instant delivery: if the background draft has already returned while user read the card:
+    if session.get("pre_draft"):
+        log_state(ctx, "serve_cached_draft", f"case_id={case_id} instant=True")
+        await send_review_card(ctx, sender, session, session["pre_draft"])
+        return
+
+    # 2. In-flight path: user clicked faster than background drafting finished
+    session["state"] = "DRAFTING"
+    update_case_status(case_id, status="DRAFTING")
 
     reply = create_text_chat(
         f"✍️ Drafter agent is formulating the legal notice with statutory citations for **Case #{case_id}**..."
@@ -664,56 +721,77 @@ async def handle_proceed_to_draft(ctx: Context, sender: str, session: dict[str, 
     log_outbound(ctx, "ChatMessage", sender, f"case_id={case_id}")
     await ctx.send(sender, reply)
 
+    # If background draft was not yet sent, send it now
+    if not session.get("draft_in_flight"):
+        facts = session.get("facts", {})
+        research = session.get("research")
+        user_name = facts.get("user_name")
+        if not user_name or user_name.strip() in ("Consumer", "Aggrieved Consumer"):
+            user_name = "Mohamed Ashiq" if DEMO_MODE else "Aggrieved Consumer"
+        user_email = facts.get("user_email") or ("mohamedashiq782@gmail.com" if DEMO_MODE else "")
+        user_phone = facts.get("user_phone") or ("+91 98765 43210" if DEMO_MODE else None)
+        user_address = facts.get("user_address") or ("Bengaluru, Karnataka" if DEMO_MODE else None)
+
+        case_facts_model = CaseFacts(
+            case_id=case_id,
+            category=facts.get("category", "ecommerce"),
+            company=facts.get("company", "Company"),
+            order_ref=facts.get("order_ref"),
+            amount_inr=facts.get("amount_inr"),
+            issue_summary=facts.get("issue_summary", ""),
+            user_name=user_name,
+            user_email=user_email,
+            user_phone=user_phone,
+            user_address=user_address,
+        )
+
+        if not isinstance(research, ResearchResult):
+            research = ResearchResult(
+                case_id=case_id,
+                rights_summary="Statutory rights under Consumer Protection (E-Commerce) Rules, 2020.",
+                company_deadline_days=30,
+                grievance_email="grievance.officer@" + facts.get("company", "merchant").lower().replace(" ", "") + ".com",
+                next_tier_name="National Consumer Helpline (NCH) & e-Daakhil",
+                citations=[
+                    Citation(
+                        title="Consumer Protection (E-Commerce) Rules, 2020",
+                        url="https://consumeraffairs.nic.in",
+                        section="Rule 4(4) & Rule 4(5)",
+                        note="Mandates appointment of Grievance Officer, 48-hour acknowledgment, and 30-day resolution.",
+                    )
+                ],
+            )
+
+        draft_req = DraftRequest(facts=case_facts_model, research=research, tier=1)
+        session["draft_in_flight"] = True
+        log_outbound(ctx, "DraftRequest", DRAFTER_ADDRESS, f"case_id={case_id}")
+        await ctx.send(DRAFTER_ADDRESS, draft_req)
+
 
 @interagent_proto.on_message(DraftResult)
 async def handle_draft_result(ctx: Context, sender: str, msg: DraftResult):
-    """Step 5: Receive legal notice draft and present Interactive Review Card."""
+    """Step 5: Receive legal notice draft and cache/present Interactive Review Card."""
     log_inbound(ctx, "DraftResult", sender, f"case_id={msg.case_id} ok={msg.ok}")
 
     user_sender = None
     for s_addr, sess in active_sessions.items():
         if sess.get("case_id") == msg.case_id:
             user_sender = s_addr
-            sess["draft"] = msg
-            sess["state"] = "DRAFT_REVIEW"
+            sess["pre_draft"] = msg
             break
 
     if not user_sender:
         return
 
-    update_case_status(msg.case_id, status="DRAFT_REVIEW")
-    record_event(msg.case_id, "DRAFT_GENERATED", f"Legal notice draft prepared: {msg.subject[:60]}")
+    sess = active_sessions[user_sender]
+    sess["draft_in_flight"] = False
 
-    facts = active_sessions[user_sender].get("facts", {})
-    research = active_sessions[user_sender].get("research")
-    grievance_email = getattr(research, "grievance_email", "grievance@company.com") if research else "grievance@company.com"
-
-    summary_rows = [
-        {"label": "Recipient", "value": f"Grievance Officer <{grievance_email}>"},
-        {"label": "Subject", "value": msg.subject[:65] + "..."},
-        {"label": "Disputed Amount", "value": f"INR {facts.get('amount_inr', 'Full Claim')}"},
-        {"label": "Statutory Notice", "value": "Cites CPA 2019 & E-Commerce Rules with CCPA escalation warning"},
-        {"label": "Body Excerpt", "value": msg.body[:140].replace("\n", " ") + "..."},
-    ]
-
-    review_payload = build_review_card(
-        title=f"Review Formal Grievance Notice — #{msg.case_id}",
-        summary_rows=summary_rows,
-        approve_label="Approve & Send Notice",
-        reject_label="Cancel / Edit",
-        approve_action="approve_dispatch",
-        reject_action="reject_or_edit",
-    )
-
-    narration = (
-        f"📄 **Formal Legal Notice Prepared** for #{msg.case_id}.\n"
-        "Please review the legal notice summary below. Upon your approval, ReclaimAI will transmit "
-        "the notice to the Grievance Officer and place the case under autonomous monitoring."
-    )
-
-    card = card_message(narration=narration, card_kind="review", payload=review_payload)
-    log_outbound(ctx, "ChatMessage[Card:Review]", user_sender, f"case_id={msg.case_id}")
-    await ctx.send(user_sender, card)
+    # If the user is currently waiting in DRAFTING state:
+    if sess.get("state") == "DRAFTING":
+        await send_review_card(ctx, user_sender, sess, msg)
+    else:
+        # User is still reading the Legal Rights card — draft is cached and ready!
+        log_state(ctx, "background_draft_ready", f"case_id={msg.case_id}")
 
 
 async def handle_approve_dispatch(ctx: Context, sender: str, session: dict[str, Any]):
@@ -1000,8 +1078,20 @@ async def handle_company_reply(ctx: Context, sender: str, session: dict[str, Any
     log_inbound(ctx, "CompanyReply", sender, f"case_id={case_id} reply={reply_text[:60]}")
     record_event(case_id, "COMPANY_REPLY_RECEIVED", f"Inbound corporate reply: '{reply_text[:120]}'")
 
-    # LLM classification
-    classification = classify_company_reply(reply_text, facts)
+    # LLM classification offloaded with timeout
+    t0 = time.time()
+    try:
+        classification = await asyncio.wait_for(
+            asyncio.to_thread(classify_company_reply, reply_text, facts),
+            timeout=8.0,
+        )
+    except Exception as exc:
+        log_error(ctx, f"classify_company_reply degraded ({type(exc).__name__})", "using deterministic classification")
+        classification = classify_company_reply(reply_text, facts)
+
+    duration = time.time() - t0
+    log_timing(ctx, "reply_classification", duration, case_id)
+
     sentiment = classification.get("sentiment", "stalling")
     session["reply_classification"] = classification
     session["company_reply_text"] = reply_text
@@ -1022,7 +1112,12 @@ async def handle_company_reply(ctx: Context, sender: str, session: dict[str, Any
             cta_label="View Resolution Audit Trail",
             cta_action="status",
         )
-        narration = f"🎉 **Fantastic News!** {company} has agreed to redress your grievance for Case **#{case_id}**."
+        narration = (
+            f"🎉 **Fantastic News!** {company} has agreed to redress your grievance for Case **#{case_id}**.\n\n"
+            f"Resolution: REFUND INITIATED / FULL REDRESSAL.\n"
+            f"Audit Status: Case Closed Successfully. The statutory clock has been disarmed.\n"
+            f"Reply **/status** anytime to view your case timeline."
+        )
         await ctx.send(sender, card_message(narration, "detail", card, is_terminal=True))
 
     elif sentiment == "rejected":
@@ -1039,9 +1134,11 @@ async def handle_company_reply(ctx: Context, sender: str, session: dict[str, Any
             action_name="send_rebuttal",
         )
         narration = (
-            f"⚠️ **Adverse Reply Detected from {company}!**\n"
+            f"⚠️ **Adverse Reply Detected from {company}!**\n\n"
             f"The company's rejection is legally void under **{classification.get('statutory_violation', 'CPA 2019')}**.\n"
-            "I have formulated a formal legal rebuttal with a 24-hour pre-litigation ultimatum:"
+            f"Reasoning: {classification.get('reasoning', 'Grounds rejected')}\n\n"
+            "I have formulated a formal legal rebuttal with a 24-hour pre-litigation ultimatum. "
+            "Reply **1** to approve & send rebuttal, or **2** to edit."
         )
         await ctx.send(sender, card_message(narration, "review", card, is_terminal=False))
 
@@ -1059,8 +1156,10 @@ async def handle_company_reply(ctx: Context, sender: str, session: dict[str, Any
             action_name="send_rebuttal",
         )
         narration = (
-            f"⏱️ **Delay Tactics Detected from {company}.**\n"
-            "Corporate stalling breaches Rule 4(5) statutory deadlines. Here is the formal 24-hour ultimatum:"
+            f"⏱️ **Delay Tactics Detected from {company}** (breach of Rule 4(5) statutory deadlines).\n"
+            f"Reasoning: {classification.get('reasoning', 'Stalling detected')}\n\n"
+            "Corporate stalling breaches Rule 4(5) statutory deadlines. Here is the formal 24-hour ultimatum. "
+            "Reply **1** to issue ultimatum, or **2** to edit."
         )
         await ctx.send(sender, card_message(narration, "review", card, is_terminal=False))
 

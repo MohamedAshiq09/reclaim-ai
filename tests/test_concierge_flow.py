@@ -240,3 +240,79 @@ def test_research_request_model_roundtrip(tiny_db, offline_llm):
         case_id="REC-X", category="ecommerce", company="Flipkart", issue_summary="s"
     ))
     assert req.facts.company == "Flipkart"
+
+
+def test_background_drafting_and_instant_review_card(tiny_db, offline_llm):
+    """Verify background pre-drafting on research result and instant review card rendering."""
+    sender = "agent1q_test_pre_draft"
+    case_id = "REC-PREDRAFT"
+    concierge_mod.active_sessions[sender] = {
+        "case_id": case_id,
+        "state": "RESEARCHING",
+        "facts": {
+            "company": "Flipkart",
+            "order_ref": "OD123",
+            "amount_inr": 24999.0,
+            "issue_summary": "Broken phone",
+            "user_name": "Mohamed Ashiq",
+            "user_email": "mohamedashiq782@gmail.com",
+        },
+    }
+
+    # Step 1: ResearchResult arrives
+    citation = concierge_mod.Citation(
+        title="Consumer Protection (E-Commerce) Rules, 2020",
+        url="https://consumeraffairs.nic.in",
+        section="Rule 4(4) & 4(5)",
+        note="Grievance officer and 48h ACK",
+    )
+    res_result = concierge_mod.ResearchResult(
+        case_id=case_id,
+        rights_summary="Mandatory 48h acknowledgment and 30-day resolution.",
+        company_deadline_days=30,
+        grievance_email="grievance.officer@flipkart.com",
+        grievance_source_url="https://www.flipkart.com/pages/grievance-redressal",
+        citations=[citation],
+        ok=True,
+    )
+
+    ctx1 = FakeCtx()
+    asyncio.run(concierge_mod.handle_research_result(ctx1, concierge_mod.RESEARCHER_ADDRESS, res_result))
+
+    # Assert Detail Card was sent to user
+    user_sends = [m for target, m in ctx1.sent if target == sender]
+    assert len(user_sends) == 1
+    # Check detail card has source row
+    meta = user_sends[0].content[1].metadata
+    assert "flipkart.com/pages/grievance-redressal" in meta["card_payload"]
+    assert "Verified Official Portal" in meta["card_payload"]
+
+    # Assert background DraftRequest was sent to DRAFTER_ADDRESS
+    drafter_sends = [m for target, m in ctx1.sent if target == concierge_mod.DRAFTER_ADDRESS]
+    assert len(drafter_sends) == 1
+    assert isinstance(drafter_sends[0], concierge_mod.DraftRequest)
+
+    # Step 2: Drafter returns DraftResult while user is reading Rights card
+    draft_res = concierge_mod.DraftResult(
+        case_id=case_id,
+        subject="FORMAL GRIEVANCE NOTICE: Flipkart - OD123",
+        body="Date: 24 October 2026\nTo Grievance Officer, Flipkart...",
+        tier=1,
+        ok=True,
+    )
+    ctx2 = FakeCtx()
+    asyncio.run(concierge_mod.handle_draft_result(ctx2, concierge_mod.DRAFTER_ADDRESS, draft_res))
+
+    # Assert draft is cached in session
+    assert concierge_mod.active_sessions[sender]["pre_draft"] == draft_res
+
+    # Step 3: User clicks "Draft Formal Grievance Notice" -> Served INSTANTLY!
+    ctx3 = FakeCtx()
+    asyncio.run(concierge_mod.handle_proceed_to_draft(ctx3, sender, concierge_mod.active_sessions[sender]))
+
+    # Must immediately render review card to user
+    review_cards = [m for target, m in ctx3.sent if target == sender]
+    assert len(review_cards) == 1
+    review_meta = review_cards[0].content[1].metadata
+    assert review_meta["card_kind"] == "review"
+    assert "Review Formal Grievance Notice" in review_meta["card_payload"]
