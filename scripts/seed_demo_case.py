@@ -2,8 +2,16 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
+from pathlib import Path
+
+# Add project root to sys.path
+ROOT_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT_DIR))
+
 from common.db import init_db, record_event, save_case
+
 
 if __name__ == "__main__":
     init_db()

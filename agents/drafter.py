@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
+
 from uuid import uuid4
 from uagents import Agent, Context, Protocol
 from uagents.setup import fund_agent_if_low
