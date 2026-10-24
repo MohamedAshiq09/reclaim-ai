@@ -9,7 +9,29 @@
 
 ## 0. Live Session State
 
-**Last updated:** 2026-10-24 14:05 IST — chat reliability fix session.
+**Last updated:** 2026-10-24 13:52 IST — post-fix LIVE verification passed.
+
+**Verified LIVE (user-run ASI:One chat, 13:34–13:41 IST, fixed code):**
+- `/ping`, `/cardtest` instant; typed `1`/`2` fallbacks answered.
+- First-message complaint full flow: Intake card **#REC-968D106F**
+  (LLM-extracted Flipkart/₹24999/OD123) → Legal Rights card → Notice
+  Review card (real ASI:One draft) → Approve → Dispatched card.
+- Real Resend delivery hit the **DEMO override inbox** with the
+  `[DEMO_MODE ACTIVE]` banner (T1/T3/T5/T7 confirmed live; email safety
+  confirmed — earlier "leak" suspicion retracted, override was set).
+- Payment protocol card rendered in chat (`RequestPayment` FET 0.001,
+  insufficient balance, Reject path). Buyer wallet unfunded.
+
+**Still NOT tested live:** `/status` timeline, `/reply` decision loop
+(T2), `/edaakhil`, `/health` card rows, Watcher 2-min escalation event,
+on-chain CommitPayment round-trip. Full handoff:
+`[docs/HANDOFF_LIVE_TEST.md](docs/HANDOFF_LIVE_TEST.md)` — friend does
+final polish + submission assets (deadline 17:50 IST).
+
+**Local commits not pushed** (user gates push): `b5740a9..e080793`,
+`2030a88` + this docs update — awaiting user's word.
+
+**Previous state (workflow session, 12:20 IST):**
 
 **Last completed (this session):**
 - Live ASI:One bug report triaged into `docs/TICKETS.md` (T1–T10) after a
@@ -208,20 +230,19 @@ All 5 agents run on **Fetch.ai Testnet** with deterministic seeds:
 
 ---
 
-## 11. Next Actions for Final Submission
-1. **Launch Bureau Runner**: Run `python run_bureau.py` (daemonized/persistent).
-2. **ASI:One Live Validation**: Run Phase 0 diagnostics first (`/ping`,
-   `/cardtest`, first-message complaint, `/health` — see
-   `docs/LIVE_TEST_CHECKLIST.md`), then the full Phase 1 intake flow.
-3. **Copy Public Shared Chat URL**: Click "Share Chat" inside ASI:One.
-4. **Record 3–5 min Demo Video**: Follow `docs/demo_script.md`.
-5. **Dashboard Agent Submission**: Submit repo URL + video URL + shared chat URL before 17:50 IST.
+## 11. Next Actions for Final Submission (owner: user + friend per docs/HANDOFF_LIVE_TEST.md)
+1. Friend runs remaining live checks (`/status`, `/reply`, `/edaakhil`,
+   `/health`, Watcher escalation, buyer-agent FET round-trip).
+2. Copy Public Shared Chat URL from ASI:One.
+3. Record 3–5 min Demo Video per `docs/demo_script.md` (include the
+   payment RequestPayment card).
+4. Dashboard Agent Submission: repo URL + video + shared chat URL before **17:50 IST**.
 
 ---
 
 ## 12. Resume Instructions for a Fresh Session
 1. Read this file (`anchor.md`) completely, then `AGENTS.md` for rules and routing.
-2. Run `TESTING=1 PYTHONPATH=. .venv/bin/pytest tests/ -q` and confirm the suite passes (15 passed as of 2026-10-24 12:05 IST; suite still is the automated gate).
+2. Run `TESTING=1 PYTHONPATH=. .venv/bin/pytest tests/ -q` and confirm the suite passes (22 passed as of 2026-10-24 13:45 IST; gate updated with the concierge flow suite).
 3. Run `.venv/bin/python scripts/failure_drill.py` to verify reliability (added in `c9be829`).
 4. If `.venv` is missing or stale, rebuild it: `python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt` (do NOT use homebrew default python3 = 3.14).
 5. Verify that all 5 agents are active on Agentverse (mailbox status in section 3 timestamps; re-verify before relying on them).
