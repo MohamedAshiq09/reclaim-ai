@@ -16,6 +16,7 @@ from uagents_core.contrib.protocols.chat import (
     chat_protocol_spec,
 )
 
+import time
 from common.config import (
     AGENTVERSE_API_KEY,
     DEMO_MODE,
@@ -25,7 +26,7 @@ from common.config import (
     FROM_EMAIL,
     RESEND_API_KEY,
 )
-from common.logging import log_error, log_inbound, log_outbound, log_state
+from common.logging import log_error, log_inbound, log_outbound, log_state, log_timing
 from common.models import DispatchRequest, DispatchResult
 
 agent = Agent(
@@ -108,16 +109,25 @@ dispatch_proto = Protocol(name="dispatch_protocol", version="1.0")
 
 @dispatch_proto.on_message(DispatchRequest)
 async def handle_dispatch_request(ctx: Context, sender: str, msg: DispatchRequest):
+    t0 = time.time()
     log_inbound(ctx, "DispatchRequest", sender, f"case_id={msg.case_id} to={msg.to_email}")
+
+    # Strip any lingering bracket placeholders
+    clean_body = msg.body
+    if "[" in clean_body or "]" in clean_body:
+        clean_body = clean_body.replace("[", "").replace("]", "")
 
     ok, message_id, err = await send_email_with_retry(
         to_email=msg.to_email,
         cc_email=msg.cc_email,
         subject=msg.subject,
-        body=msg.body,
+        body=clean_body,
     )
 
-    fallback_text = None if ok else f"Subject: {msg.subject}\n\n{msg.body}"
+    duration = time.time() - t0
+    log_timing(ctx, "send", duration, msg.case_id)
+
+    fallback_text = None if ok else f"Subject: {msg.subject}\n\n{clean_body}"
 
     res = DispatchResult(
         case_id=msg.case_id,

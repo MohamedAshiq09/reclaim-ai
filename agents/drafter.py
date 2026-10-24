@@ -16,14 +16,15 @@ from uagents_core.contrib.protocols.chat import (
     chat_protocol_spec,
 )
 
+import time
 from common.config import AGENTVERSE_API_KEY, DRAFTER_ADDRESS, DRAFTER_SEED
-from common.llm import generate_complaint_draft, deterministic_draft
-from common.logging import log_error, log_inbound, log_outbound, log_state
+from common.llm import generate_complaint_draft, deterministic_draft, clean_and_validate_notice
+from common.logging import log_error, log_inbound, log_outbound, log_state, log_timing
 from common.models import DraftRequest, DraftResult
 
-# Draft generation can legitimately take longer than a classification call;
+# Draft generation hard timeout targeting <15s latency budget;
 # a timeout still degrades to the deterministic statutory template.
-DRAFT_TIMEOUT_S = float(os.getenv("DRAFT_TIMEOUT_S", "45"))
+DRAFT_TIMEOUT_S = float(os.getenv("DRAFT_TIMEOUT_S", "15"))
 
 agent = Agent(
     name="reclaimai_drafter",
@@ -31,7 +32,6 @@ agent = Agent(
     port=8003,
     endpoint=None if AGENTVERSE_API_KEY else ["http://127.0.0.1:8003/submit"],
     mailbox=bool(AGENTVERSE_API_KEY),
-
     agentverse="https://agentverse.ai",
     network="testnet",
 )
@@ -45,6 +45,7 @@ draft_proto = Protocol(name="draft_protocol", version="1.0")
 
 @draft_proto.on_message(DraftRequest)
 async def handle_draft_request(ctx: Context, sender: str, msg: DraftRequest):
+    t0 = time.time()
     log_inbound(ctx, "DraftRequest", sender, f"case_id={msg.facts.case_id} tier={msg.tier}")
 
     facts_dict = {
@@ -56,6 +57,8 @@ async def handle_draft_request(ctx: Context, sender: str, msg: DraftRequest):
         "issue_summary": msg.facts.issue_summary,
         "user_name": msg.facts.user_name,
         "user_email": msg.facts.user_email,
+        "user_phone": msg.facts.user_phone,
+        "user_address": msg.facts.user_address,
         "desired_outcome": msg.facts.desired_outcome,
     }
 
@@ -81,10 +84,16 @@ async def handle_draft_request(ctx: Context, sender: str, msg: DraftRequest):
         log_error(ctx, f"draft generation degraded ({type(exc).__name__})", "using deterministic statutory template")
         res = deterministic_draft(facts=facts_dict, research=research_dict, tier=msg.tier)
 
+    # Sanitize and strictly enforce zero bracketed placeholders
+    clean_subj, clean_body, _ = clean_and_validate_notice(res["subject"], res["body"], facts_dict)
+
+    duration = time.time() - t0
+    log_timing(ctx, "draft", duration, msg.facts.case_id)
+
     out = DraftResult(
         case_id=msg.facts.case_id,
-        subject=res["subject"],
-        body=res["body"],
+        subject=clean_subj,
+        body=clean_body,
         tier=msg.tier,
         ok=True,
     )

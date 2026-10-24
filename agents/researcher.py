@@ -14,13 +14,14 @@ from uagents_core.contrib.protocols.chat import (
     chat_protocol_spec,
 )
 
+import time
 from common.config import (
     AGENTVERSE_API_KEY,
     RESEARCHER_ADDRESS,
     RESEARCHER_SEED,
     SEARCH_API_KEY,
 )
-from common.logging import log_inbound, log_outbound, log_state
+from common.logging import log_inbound, log_outbound, log_state, log_timing
 from common.models import Citation, ResearchRequest, ResearchResult
 
 # Curated, verified repository of Indian grievance contacts
@@ -249,12 +250,15 @@ research_proto = Protocol(name="research_protocol", version="1.0")
 
 @research_proto.on_message(ResearchRequest)
 async def handle_research_request(ctx: Context, sender: str, msg: ResearchRequest):
+    t0 = time.time()
     log_inbound(ctx, "ResearchRequest", sender, f"case_id={msg.facts.case_id}")
     res = perform_research(
         case_id=msg.facts.case_id,
         category=msg.facts.category,
         company=msg.facts.company,
     )
+    duration = time.time() - t0
+    log_timing(ctx, "research", duration, msg.facts.case_id)
     log_outbound(ctx, "ResearchResult", sender, f"case_id={res.case_id} email={res.grievance_email}")
     await ctx.send(sender, res)
 
