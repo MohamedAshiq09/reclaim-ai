@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any, Optional
 from openai import OpenAI
 from common.config import ASI_ONE_API_KEY, ASI_ONE_BASE_URL, ASI_ONE_MODEL
+
+# Hard cap for every ASI:One call so a slow LLM can never freeze the shared
+# Bureau event loop (agents additionally offload calls to a worker thread).
+LLM_TIMEOUT_S = float(os.getenv("LLM_TIMEOUT_S", "20"))
 
 
 def get_llm_client() -> Optional[OpenAI]:
@@ -13,13 +18,15 @@ def get_llm_client() -> Optional[OpenAI]:
     return OpenAI(
         api_key=ASI_ONE_API_KEY,
         base_url=ASI_ONE_BASE_URL,
+        timeout=LLM_TIMEOUT_S,
+        max_retries=1,
     )
 
 
 def classify_intent_and_extract(user_text: str) -> dict[str, Any]:
     """Extract case facts and classify consumer dispute category using ASI:One."""
     client = get_llm_client()
-    default_res = _heuristic_extraction(user_text)
+    default_res = heuristic_extraction(user_text)
 
     if not client:
         return default_res
@@ -64,7 +71,9 @@ Respond ONLY with valid JSON.
     return default_res
 
 
-def _heuristic_extraction(text: str) -> dict[str, Any]:
+def heuristic_extraction(text: str) -> dict[str, Any]:
+    """Deterministic offline fact extraction — used when the key/API is missing
+    or the live call exceeds ``LLM_TIMEOUT_S``."""
     text_lower = text.lower()
 
     # Category detection
@@ -116,14 +125,13 @@ def _heuristic_extraction(text: str) -> dict[str, Any]:
     }
 
 
-def generate_complaint_draft(
+def deterministic_draft(
     facts: dict[str, Any],
     research: dict[str, Any],
     tier: int = 1,
-    feedback: str | None = None,
 ) -> dict[str, str]:
-    """Generate formal legal notice citing Indian consumer laws."""
-    client = get_llm_client()
+    """Deterministic statutory notice template — offline fallback when the LLM
+    is unavailable or a live call exceeds ``LLM_TIMEOUT_S``."""
     company = facts.get("company", "Company")
     order_ref = facts.get("order_ref") or "REF-PENDING"
     amount = facts.get("amount_inr") or "Applicable Amount"
@@ -140,6 +148,72 @@ def generate_complaint_draft(
         subject = f"FORMAL GRIEVANCE NOTICE: Deficiency in Service / Unfair Trade Practice - Order Ref #{order_ref} - {company}"
     else:
         subject = f"ESCALATION TIER-2: Unresolved Consumer Complaint against {company} [Ref: #{order_ref}]"
+
+    body = f"""To:
+The Grievance Officer, {company}
+
+SUBJECT: {subject}
+
+Dear Sir/Madam,
+
+I am writing this formal grievance notice regarding deficiency of service and unfair trade practices in connection with my transaction with {company}.
+
+TRANSACTION DETAILS:
+- Complainant: {user_name}
+- Registered Email: {user_email}
+- Order / Transaction Reference: {order_ref}
+- Disputed Amount: INR {amount}
+
+FACTS OF THE GRIEVANCE:
+{issue}
+
+STATUTORY RIGHTS & LEGAL CITATIONS:
+{rights_summary}
+
+Applicable Provisions:
+{citations_text}
+
+DEMAND & RELIEF SOUGHT:
+In accordance with Rule 4(4) and Rule 4(5) of the Consumer Protection (E-Commerce) Rules, 2020 and the Consumer Protection Act, 2019, your entity is mandated to maintain a designated Grievance Officer, acknowledge this grievance within forty-eight (48) hours, and redress the complaint within one month from the date of receipt.
+
+
+I hereby demand:
+1. Immediate reversal and full refund of INR {amount} to my original payment source.
+2. Written confirmation of grievance resolution.
+
+NOTICE OF STATUTORY ESCALATION:
+Please take note that in the event of your failure to redress this grievance within the statutory timeline, I shall proceed without further notice to escalate this matter to the National Consumer Helpline (NCH / consumerhelpline.gov.in), file an online petition before the Consumer Disputes Redressal Commission via the e-Daakhil portal (edaakhil.nic.in), and report the non-compliance to the Central Consumer Protection Authority (CCPA) for statutory penalties.
+
+Yours sincerely,
+{user_name}
+(Complainant)
+
+DISCLAIMER: This notice is issued under the statutory framework of the Consumer Protection Act, 2019 and relevant sector regulations.
+"""
+    return {"subject": subject, "body": body}
+
+
+def generate_complaint_draft(
+    facts: dict[str, Any],
+    research: dict[str, Any],
+    tier: int = 1,
+    feedback: str | None = None,
+) -> dict[str, str]:
+    """Generate formal legal notice citing Indian consumer laws via ASI:One,
+    degrading to the deterministic template on API absence or failure."""
+    client = get_llm_client()
+
+    # Prompt context (same inputs the deterministic template renders from)
+    company = facts.get("company", "Company")
+    order_ref = facts.get("order_ref") or "REF-PENDING"
+    amount = facts.get("amount_inr") or "Applicable Amount"
+    issue = facts.get("issue_summary", "Unfair trade practice and non-delivery of service")
+    user_name = facts.get("user_name", "Aggrieved Consumer")
+    user_email = facts.get("user_email", "")
+    rights_summary = research.get("rights_summary", "")
+    citations_text = "\n".join(
+        [f"- {c.get('title')}: {c.get('note')} (Source: {c.get('url')})" for c in research.get("citations", [])]
+    )
 
     if client:
         prompt = f"""You are an expert Indian Consumer Law Drafter.
@@ -185,49 +259,7 @@ Output ONLY valid JSON with keys "subject" and "body".
         except Exception as e:
             print(f"[llm] Draft generation error: {e}")
 
-    # Deterministic fallback draft
-    body = f"""To:
-The Grievance Officer, {company}
-
-SUBJECT: {subject}
-
-Dear Sir/Madam,
-
-I am writing this formal grievance notice regarding deficiency of service and unfair trade practices in connection with my transaction with {company}.
-
-TRANSACTION DETAILS:
-- Complainant: {user_name}
-- Registered Email: {user_email}
-- Order / Transaction Reference: {order_ref}
-- Disputed Amount: INR {amount}
-
-FACTS OF THE GRIEVANCE:
-{issue}
-
-STATUTORY RIGHTS & LEGAL CITATIONS:
-{rights_summary}
-
-Applicable Provisions:
-{citations_text}
-
-DEMAND & RELIEF SOUGHT:
-In accordance with Rule 4(4) and Rule 4(5) of the Consumer Protection (E-Commerce) Rules, 2020 and the Consumer Protection Act, 2019, your entity is mandated to maintain a designated Grievance Officer, acknowledge this grievance within forty-eight (48) hours, and redress the complaint within one month from the date of receipt.
-
-
-I hereby demand:
-1. Immediate reversal and full refund of INR {amount} to my original payment source.
-2. Written confirmation of grievance resolution.
-
-NOTICE OF STATUTORY ESCALATION:
-Please take note that in the event of your failure to redress this grievance within the statutory timeline, I shall proceed without further notice to escalate this matter to the National Consumer Helpline (NCH / consumerhelpline.gov.in), file an online petition before the Consumer Disputes Redressal Commission via the e-Daakhil portal (edaakhil.nic.in), and report the non-compliance to the Central Consumer Protection Authority (CCPA) for statutory penalties.
-
-Yours sincerely,
-{user_name}
-(Complainant)
-
-DISCLAIMER: This notice is issued under the statutory framework of the Consumer Protection Act, 2019 and relevant sector regulations.
-"""
-    return {"subject": subject, "body": body}
+    return deterministic_draft(facts, research, tier)
 
 
 def classify_company_reply(company_reply_text: str, case_facts: dict[str, Any]) -> dict[str, Any]:
