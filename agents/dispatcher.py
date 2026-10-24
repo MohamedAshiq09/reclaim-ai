@@ -46,6 +46,10 @@ if os.getenv("TESTING") != "1" and agent.wallet:
 if RESEND_API_KEY:
     resend.api_key = RESEND_API_KEY
 
+# Hard cap for the blocking Resend HTTP call so a slow email provider can
+# never freeze the shared Bureau event loop.
+SEND_TIMEOUT_S = 15.0
+
 
 async def send_email_with_retry(
     to_email: str,
@@ -83,7 +87,12 @@ async def send_email_with_retry(
             if cc_email and not DEMO_MODE:
                 params["cc"] = [cc_email]
 
-            response = resend.Emails.send(params)
+            # resend.Emails.send is a blocking HTTP call: offload to a worker
+            # thread with a hard timeout so the shared Bureau loop never freezes.
+            response = await asyncio.wait_for(
+                asyncio.to_thread(resend.Emails.send, params),
+                timeout=SEND_TIMEOUT_S,
+            )
             msg_id = response.get("id") if isinstance(response, dict) else getattr(response, "id", str(uuid4()))
             return True, str(msg_id), None
         except Exception as e:

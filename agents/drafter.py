@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import datetime, timezone
 
@@ -16,9 +17,13 @@ from uagents_core.contrib.protocols.chat import (
 )
 
 from common.config import AGENTVERSE_API_KEY, DRAFTER_ADDRESS, DRAFTER_SEED
-from common.llm import generate_complaint_draft
-from common.logging import log_inbound, log_outbound, log_state
+from common.llm import generate_complaint_draft, deterministic_draft
+from common.logging import log_error, log_inbound, log_outbound, log_state
 from common.models import DraftRequest, DraftResult
+
+# Draft generation can legitimately take longer than a classification call;
+# a timeout still degrades to the deterministic statutory template.
+DRAFT_TIMEOUT_S = float(os.getenv("DRAFT_TIMEOUT_S", "45"))
 
 agent = Agent(
     name="reclaimai_drafter",
@@ -61,12 +66,20 @@ async def handle_draft_request(ctx: Context, sender: str, msg: DraftRequest):
         "grievance_email": msg.research.grievance_email,
     }
 
-    res = generate_complaint_draft(
-        facts=facts_dict,
-        research=research_dict,
-        tier=msg.tier,
-        feedback=msg.feedback,
-    )
+    try:
+        res = await asyncio.wait_for(
+            asyncio.to_thread(
+                generate_complaint_draft,
+                facts=facts_dict,
+                research=research_dict,
+                tier=msg.tier,
+                feedback=msg.feedback,
+            ),
+            timeout=DRAFT_TIMEOUT_S,
+        )
+    except Exception as exc:
+        log_error(ctx, f"draft generation degraded ({type(exc).__name__})", "using deterministic statutory template")
+        res = deterministic_draft(facts=facts_dict, research=research_dict, tier=msg.tier)
 
     out = DraftResult(
         case_id=msg.facts.case_id,
