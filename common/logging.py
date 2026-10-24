@@ -65,3 +65,11 @@ def log_error(ctx: Context, error: Any, details: str | None = None) -> None:
     ctx.logger.error(f"[error] {line}")
     append_to_live_log("ERROR", "error", line)
 
+
+def log_timing(ctx: Context, step: str, duration_s: float, case_id: str | None = None) -> None:
+    """Log per-step execution timing to live audit log."""
+    cid = f" case_id={case_id}" if case_id else ""
+    line = f"step={step} duration_s={duration_s:.2f}s{cid}"
+    ctx.logger.info(f"[timing] {line}")
+    append_to_live_log("INFO", "timing", line)
+

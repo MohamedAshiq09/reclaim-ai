@@ -12,7 +12,7 @@ load_dotenv(ROOT_DIR / ".env")
 AGENTVERSE_API_KEY = os.getenv("AGENTVERSE_API_KEY", "").strip()
 ASI_ONE_API_KEY = os.getenv("ASI_ONE_API_KEY", "").strip()
 ASI_ONE_BASE_URL = os.getenv("ASI_ONE_BASE_URL", "https://api.asi1.ai/v1").strip()
-ASI_ONE_MODEL = os.getenv("ASI_ONE_MODEL", "asi1").strip()
+ASI_ONE_MODEL = os.getenv("ASI_ONE_MODEL", "asi1-mini").strip()
 
 # Search API
 SEARCH_API_KEY = os.getenv("SEARCH_API_KEY", "").strip()
