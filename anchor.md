@@ -1,6 +1,48 @@
 # ReclaimAI Anchor — Single Source of Truth
 
-> **MANDATORY**: Any new agent or developer session working on this codebase **MUST read this file first** and update it before finishing.
+> **MANDATORY**: Any new agent or developer session working on this codebase
+> **MUST read this file first** and update it before finishing.
+> **Read order**: 1) this file ("where are we"), 2) `AGENTS.md` ("rules,
+> ownership, routing", the contract every agent obeys).
+
+---
+
+## 0. Live Session State
+
+**Last updated:** 2026-10-24 12:20 IST — after pulling teammate's 5 commits
+and re-verifying.
+
+**Last completed (this session):**
+- Agentic workflow layer created on user instruction: `AGENTS.md` (routing +
+  rules contract), `.opencode/agents/` 6 subagents (concierge-builder,
+  pipeline-builder, common-builder, research-agent, code-review-agent,
+  git-commit-agent), `.agent/skills/{code-review-gate,git-commit-hygiene,research-source-protocol}`,
+  `opencode.json` (registers `.agent/skills` so skills stay discoverable).
+- Pulled teammate's remote batch `a68cbf9..c9be829` with `git stash` +
+  `pull --ff-only` + `stash pop`; resolved the `anchor.md` conflict (§8, §12)
+  by merging both sides (see §14 Reconciliation Log).
+- Re-verified the suite on the new HEAD: `TESTING=1 PYTHONPATH=. .venv/bin/pytest
+  tests/ -q` → 15 passed.
+
+**Last completed (teammate, pulled this session):**
+- `c9be829` — payment protocol schema fields fixed, `scripts/failure_drill.py`
+  added (closes the earlier missing-script finding), README + anchor updated.
+- `1722449` — payment intent routed in concierge, buyer role set in
+  payment protocol. `fec6b72`/`c64e4f2` — buyer Almanac endpoint fixes.
+- `a68cbf9` — form card replaced with review card for guaranteed ASI:One
+  rendering; mention command routing fixed (`agents/concierge.py`,
+  `common/cards.py`).
+
+**In progress right now:**
+- Workflow commits + push (on user instruction). `docs/LIVE_TEST_CHECKLIST.md`
+  Phases 2–5 and the demo video are for the user to run.
+
+**Verified this session (commands observed):**
+- `TESTING=1 PYTHONPATH=. .venv/bin/pytest tests/ -q` → **15 passed** on HEAD
+  `a68cbf9` (12:20 IST, after pull).
+- `.venv` rebuilt with `python3.11` (homebrew default 3.14 breaks
+  `uagents` import — "no current event loop"). Always use
+  `python3.11 -m venv .venv`.
 
 ---
 
@@ -29,6 +71,7 @@
 | **Public ASI:One Shared Chat URL** | **NOT STARTED** | Pending user live chat run | Will generate from ASI:One chat interface |
 | **Demo Video (3–5 min)** | **NOT STARTED** | Script ready in [docs/demo_script.md](docs/demo_script.md) | Recording scheduled for ~15:30 IST |
 | **Dashboard Agent Submission** | **NOT STARTED** | Fetch-A-Thon 3.0 Dashboard | Mandatory via Project Submission Agent |
+| **Agentic Workflow Layer** | **DONE** | [AGENTS.md](AGENTS.md), [.opencode/agents/](.opencode/agents/), [.agent/skills/](.agent/skills/), [opencode.json](opencode.json) | Rules contract + 6 subagents + 3 common skills; pushed on user instruction |
 
 ---
 
@@ -112,7 +155,10 @@ All 5 agents run on **Fetch.ai Testnet** with deterministic seeds:
 ---
 
 ## 8. Known Issues and Failing Tests
-- **Failing Tests**: **ZERO** (15 of 15 unit tests passing).
+- **Failing Tests**: **ZERO** — verified 2026-10-24 12:05 IST (`TESTING=1 PYTHONPATH=. .venv/bin/pytest tests/ -q` → 15 passed) on HEAD `a68cbf9` after pull.
+- **README Quick Start uses `uv`**: `uv` is not installed on this machine; the verified path is `python3.11 -m venv .venv` (`python3.11` lives at `~/.local/bin/python3.11`). Documented in `AGENTS.md` section 3; README line itself is teammate's call.
+- **Python 3.14 breaks uAgents imports** ("no current event loop" at import time) — keep the Python 3.11 venv; homebrew default `python3` is 3.14.6.
+- **Uncommitted skill-copy deletions**: the working tree currently deletes the skill trees tracked in git — `.agent/skills/`, `.agents/`, `.claude/`, `.cursor/` — while `AGENTS.md`/`opencode.json` reference `.agent/skills/` as the canonical location. Decision pending with user; do NOT stage these deletions without explicit instruction.
 - **Proactive Notification**: ASI:One chat sessions cannot be initiated proactively by the agent if the user closes the window. Escalation updates are delivered reliably through the `/status` command, which renders the live chronological audit trail card.
 
 ---
@@ -146,7 +192,41 @@ All 5 agents run on **Fetch.ai Testnet** with deterministic seeds:
 ---
 
 ## 12. Resume Instructions for a Fresh Session
-1. Read this file (`anchor.md`) completely.
-2. Run `TESTING=1 PYTHONPATH=. .venv/bin/pytest tests/` to confirm all 15 tests pass.
-3. Run `python scripts/failure_drill.py` to verify reliability.
-4. Launch the agents: `python run_bureau.py`.
+1. Read this file (`anchor.md`) completely, then `AGENTS.md` for rules and routing.
+2. Run `TESTING=1 PYTHONPATH=. .venv/bin/pytest tests/ -q` and confirm the suite passes (15 passed as of 2026-10-24 12:05 IST; suite still is the automated gate).
+3. Run `.venv/bin/python scripts/failure_drill.py` to verify reliability (added in `c9be829`).
+4. If `.venv` is missing or stale, rebuild it: `python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt` (do NOT use homebrew default python3 = 3.14).
+5. Verify that all 5 agents are active on Agentverse (mailbox status in section 3 timestamps; re-verify before relying on them).
+6. Launch the agents: `.venv/bin/python run_bureau.py`; audit via `tail -f logs/live.log`.
+
+---
+
+## 13. Agentic Workflow (operating contract)
+
+The full routing/control contract lives in [AGENTS.md](AGENTS.md). Summary of the roster (`.opencode/agents/`):
+
+| Subagent | Owns / Role |
+|---|---|
+| `common-builder` | `common/**`, `fet_payments/**`, `tests/**`, `requirements.txt`, `.env.example` |
+| `pipeline-builder` | `agents/{researcher,drafter,dispatcher,watcher}.py`, `run_bureau.py`, `scripts/**` |
+| `concierge-builder` | `agents/concierge.py` (chat, cards, /commands, payment seller) |
+| `research-agent` | `corpus/**`, `docs/verified_facts.md` (verified data only); official docs/statute lookups |
+| `code-review-agent` | read-only diff review against AGENTS.md section 2; explicit verdict required before any commit |
+| `git-commit-agent` | atomic commits; both gates required: code-review approval + user instruction |
+
+Common skills live beside the 8 fetched skills in `.agent/skills/`:
+`code-review-gate`, `git-commit-hygiene`, `research-source-protocol`.
+`opencode.json` registers that path so all 11 project skills resolve after
+opencode restart. Restart opencode after adding/changing skills, agents or
+this config file.
+
+---
+
+## 14. Reconciliation Log
+- **2026-10-24 ~12:20 IST**: Pulled remote `a68cbf9..c9be829` (teammate batch
+  addressing payment protocol schema, buyer endpoint, form→review card,
+  `/reply` routing, and `scripts/failure_drill.py` added — closes the §8
+  missing-script finding). `anchor.md` conflict (§8, §12) resolved by
+  merging both sides; our `§0/§2/§13` preserved. Local skill-tree deletions
+  `.agent/.agents/.claude/.cursor` restored after the pull remains uncommitted
+  pending the user's structure decision (§8). Stash dropped after pop.
