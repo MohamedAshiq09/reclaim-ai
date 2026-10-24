@@ -29,6 +29,7 @@ AGENTS_METADATA = [
     {
         "agent": concierge_agent,
         "name": "ReclaimAI Concierge",
+        "handle": "reclaim-ai",
         "description": (
             "Autonomous Consumer Rights & Grievance Redressal Orchestrator for India. "
             "Researches consumer rights under CPA 2019 and E-Commerce Rules, finds Grievance Officers, "
@@ -51,6 +52,7 @@ AGENTS_METADATA = [
     {
         "agent": researcher_agent,
         "name": "ReclaimAI Researcher",
+        "handle": "reclaim-researcher",
         "description": (
             "Statutory consumer law researcher for India. Retrieves Consumer Protection Act 2019 provisions, "
             "E-Commerce Rules 2020 (Rule 4(4) & 4(5)), DGCA CAR Section 3 Series M Part II, and RBI Ombudsman Scheme."
@@ -69,6 +71,7 @@ AGENTS_METADATA = [
     {
         "agent": drafter_agent,
         "name": "ReclaimAI Drafter",
+        "handle": "reclaim-drafter",
         "description": (
             "Statutory notice drafter for Indian consumer disputes. Formulates formal legal notices citing "
             "the Consumer Protection Act 2019 with statutory deadlines and CCPA / e-Daakhil warnings."
@@ -86,6 +89,7 @@ AGENTS_METADATA = [
     {
         "agent": dispatcher_agent,
         "name": "ReclaimAI Dispatcher",
+        "handle": "reclaim-dispatcher",
         "description": (
             "Official notice transmission agent. Dispatches verified emails to corporate grievance officers "
             "via Resend API with exponential backoff and safe demo redirection."
@@ -101,6 +105,7 @@ AGENTS_METADATA = [
     {
         "agent": watcher_agent,
         "name": "ReclaimAI Escalation Watcher",
+        "handle": "reclaim-watcher",
         "description": (
             "Autonomous deadline surveillance agent. Tracks statutory redressal timelines on interval, "
             "and autonomously files Tier-2 escalations to the National Consumer Helpline (NCH) and Regulatory Ombudsman."
@@ -138,10 +143,13 @@ async def register_all():
         name = item["name"]
         print(f"Registering {name} ({ag.address})...")
 
+        avatar = "https://storage.googleapis.com/agentverse-prod-assets/agent-avatars-pub/65049396.jpg"
+        handle = item.get("handle")
+
         profile = AgentProfile(
             description=item["description"],
             readme=item["readme"],
-            avatar_url="",
+            avatar_url=avatar,
             banner_url="",
             starter_prompts=item.get("starter_prompts", []),
         )
@@ -149,7 +157,7 @@ async def register_all():
         reg_data = RegistrationRequest(
             address=ag.address,
             name=name,
-            handle=None,
+            handle=handle,
             url=None,
             profile=profile,
             endpoints=ag._endpoints,
