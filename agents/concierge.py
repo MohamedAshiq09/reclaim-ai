@@ -84,8 +84,9 @@ agent = Agent(
     name="reclaimai_concierge",
     seed=CONCIERGE_SEED,
     port=8001,
-    endpoint=["http://127.0.0.1:8001/submit"],
+    endpoint=None if AGENTVERSE_API_KEY else ["http://127.0.0.1:8001/submit"],
     mailbox=bool(AGENTVERSE_API_KEY),
+
     agentverse="https://agentverse.ai",
     network="testnet",
 )
@@ -420,8 +421,9 @@ async def handle_proceed_to_draft(ctx: Context, sender: str, session: dict[str, 
                 Citation(
                     title="Consumer Protection (E-Commerce) Rules, 2020",
                     url="https://consumeraffairs.nic.in",
-                    section="Rule 5(4)",
-                    note="Mandatory 48h acknowledgment and 30-day resolution.",
+                    section="Rule 4(4) & Rule 4(5)",
+                    note="Mandates appointment of Grievance Officer, 48-hour acknowledgment, and 30-day resolution.",
+
                 )
             ],
         )

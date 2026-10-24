@@ -92,7 +92,8 @@ All five agents implement the **Agent Chat Protocol (ACP)** and are registered o
 ReclaimAI demonstrates full-spectrum utilization of predefined ASI:One Interactive Card schemas:
 
 1. **`form` Card (Intake)**: Automatically pre-fills entities extracted by the ASI:One LLM (company name, disputed amount, order ID) and captures complainant contact details.
-2. **`detail` Card (Statutory Rights)**: Presents mandatory redressal timelines (48-hour acknowledgment, 30-day resolution under Rule 5(4)), citation links, and verified Grievance Officer nodal contacts.
+2. **`detail` Card (Statutory Rights)**: Presents mandatory redressal timelines (48-hour acknowledgment, 30-day resolution under Rule 4(4) & Rule 4(5)), citation links, and verified Grievance Officer nodal contacts.
+
 3. **`review` Card (Legal Notice Approval)**: Displays key-value summary rows and statutory notice excerpt with primary **Approve & Send Notice** and **Cancel/Edit** CTAs.
 4. **`carousel` Card (Dispute Audit Timeline)**: Triggered via the `/status` command, presenting a live multi-card chronological audit trail of all automated events from SQLite (`cases.db`).
 
@@ -167,9 +168,10 @@ python scripts/seed_demo_case.py
 
 All legal rules implemented in ReclaimAI have been verified against official government gazettes:
 
-- **Consumer Protection (E-Commerce) Rules, 2020 (Rule 5(4))**: [Ministry of Consumer Affairs](https://consumeraffairs.nic.in/acts-and-rules/consumer-protection/consumer-protection-e-commerce-rules-2020)
+- **Consumer Protection (E-Commerce) Rules, 2020 (Rule 4(4) & 4(5))**: [Ministry of Consumer Affairs](https://consumeraffairs.nic.in/acts-and-rules/consumer-protection/consumer-protection-e-commerce-rules-2020)
 - **Consumer Protection Act, 2019 (Act 35 of 2019)**: [Department of Consumer Affairs](https://consumeraffairs.nic.in)
-- **DGCA Civil Aviation Requirements (CAR Section 3, Series M, Part IV)**: [Directorate General of Civil Aviation](https://www.dgca.gov.in)
+- **DGCA Civil Aviation Requirements (CAR Section 3, Series M, Part II & Part IV)**: [Directorate General of Civil Aviation](https://www.dgca.gov.in)
+
 - **Reserve Bank Integrated Ombudsman Scheme, 2021**: [Reserve Bank of India](https://cms.rbi.org.in)
 - **National Consumer Helpline (NCH)**: [consumerhelpline.gov.in](https://consumerhelpline.gov.in)
 - **e-Daakhil Online Commission Filing**: [edaakhil.nic.in](https://edaakhil.nic.in)

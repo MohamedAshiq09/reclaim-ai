@@ -30,7 +30,7 @@ def test_research_models():
     citation = Citation(
         title="Consumer Protection (E-Commerce) Rules, 2020",
         url="https://consumeraffairs.nic.in",
-        section="Rule 5(4)",
+        section="Rule 4(4) & Rule 4(5)",
         note="48h acknowledgment and 30d redressal",
     )
     res = ResearchResult(
@@ -43,7 +43,8 @@ def test_research_models():
     )
     assert res.case_id == "REC-TEST01"
     assert len(res.citations) == 1
-    assert res.citations[0].section == "Rule 5(4)"
+    assert res.citations[0].section == "Rule 4(4) & Rule 4(5)"
+
 
 
 def test_draft_models():

@@ -32,8 +32,9 @@ agent = Agent(
     name="reclaimai_dispatcher",
     seed=DISPATCHER_SEED,
     port=8004,
-    endpoint=["http://127.0.0.1:8004/submit"],
+    endpoint=None if AGENTVERSE_API_KEY else ["http://127.0.0.1:8004/submit"],
     mailbox=bool(AGENTVERSE_API_KEY),
+
     agentverse="https://agentverse.ai",
     network="testnet",
 )

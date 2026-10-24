@@ -211,7 +211,8 @@ Applicable Provisions:
 {citations_text}
 
 DEMAND & RELIEF SOUGHT:
-In accordance with Rule 5(4) of the Consumer Protection (E-Commerce) Rules, 2020 and the Consumer Protection Act, 2019, your entity is mandated to acknowledge this grievance within forty-eight (48) hours and redress the complaint within one month from the date of receipt.
+In accordance with Rule 4(4) and Rule 4(5) of the Consumer Protection (E-Commerce) Rules, 2020 and the Consumer Protection Act, 2019, your entity is mandated to maintain a designated Grievance Officer, acknowledge this grievance within forty-eight (48) hours, and redress the complaint within one month from the date of receipt.
+
 
 I hereby demand:
 1. Immediate reversal and full refund of INR {amount} to my original payment source.

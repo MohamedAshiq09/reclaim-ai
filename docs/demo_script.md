@@ -31,20 +31,21 @@
 ### [1:20 – 2:05] 3. Autonomous Rights Research (Interactive Detail Card)
 - **Agent Action**:
   - Concierge invokes the **Researcher Agent** via `ResearchRequest`.
-  - Researcher analyzes statutory rules (Rule 5(4) of the Consumer Protection (E-Commerce) Rules, 2020) and retrieves the official Grievance Officer nodal contact (`grievance.officer@flipkart.com`).
+  - Researcher analyzes statutory rules (Rule 4(4) & Rule 4(5) of the Consumer Protection (E-Commerce) Rules, 2020) and retrieves the official Grievance Officer nodal contact (`grievance.officer@flipkart.com`).
   - Concierge presents an **ASI:One Interactive Detail Card** displaying:
-    - Mandatory 48-hour acknowledgment rule.
-    - 30-day statutory resolution window.
-    - Verified Grievance Officer email and citation sources.
+    - Mandatory 48-hour acknowledgment rule (Rule 4(5)).
+    - 30-day statutory resolution window (Rule 4(5)).
+    - Verified Grievance Officer email and citation sources (Rule 4(4)).
 - **Demo Step**: Point out the official citations and click **"Draft Formal Grievance Notice"**.
 
 ---
 
 ### [2:05 – 2:50] 4. Legal Notice Drafting & Review (Interactive Review Card)
 - **Agent Action**:
-  - Drafter Agent uses ASI:One LLM to generate a formal statutory grievance letter citing the Consumer Protection Act, 2019, Rule 5(4), and warning of CCPA / e-Daakhil escalation.
+  - Drafter Agent uses ASI:One LLM to generate a formal statutory grievance letter citing the Consumer Protection Act, 2019, Rule 4(4) & Rule 4(5), and warning of CCPA / e-Daakhil escalation.
   - Concierge presents an **ASI:One Interactive Review Card** with key-value summary rows and body preview.
 - **Demo Step**: Click **"Approve & Send Notice"**.
+
 
 ---
 

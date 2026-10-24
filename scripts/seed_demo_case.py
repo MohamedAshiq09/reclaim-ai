@@ -42,17 +42,18 @@ if __name__ == "__main__":
         company="Flipkart",
         facts_json=json.dumps(facts),
         status="WAITING",
-        deadline_at=now + 15.0,  # Firing in 15 seconds!
+        deadline_at=now + 30.0,  # Firing in 30 seconds for quick testing (or 120s in full demo)
         tier=1,
         email_msg_id="resend_demo_initial_notice_123",
         tracking_paid=1,
     )
 
     record_event(case_id, "INTAKE_COMPLETED", "Form card submitted by user")
-    record_event(case_id, "LEGAL_RESEARCH_DONE", "Identified Rule 5(4) E-Commerce Rules & Section 2(11) CPA 2019")
+    record_event(case_id, "LEGAL_RESEARCH_DONE", "Identified Rule 4(4) & Rule 4(5) E-Commerce Rules & Section 2(11) CPA 2019")
     record_event(case_id, "DRAFT_APPROVED", "User approved formal legal notice to Flipkart Grievance Officer")
     record_event(case_id, "NOTICE_DISPATCHED", "Email notice served on grievance.officer@flipkart.com (msg_id=resend_demo_initial_notice_123)")
-    record_event(case_id, "WATCHER_ARMED", "Autonomous Watcher armed with accelerated demo deadline (15s)")
+    record_event(case_id, "WATCHER_ARMED", "Autonomous Watcher armed with accelerated demo deadline (30s)")
+
 
     print(f"✅ Successfully seeded demo case #{case_id} into cases.db!")
     print(f"Target company: {facts['company']}")

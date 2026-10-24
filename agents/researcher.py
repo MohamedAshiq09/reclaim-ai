@@ -117,18 +117,18 @@ def analyze_rights_and_laws(category: str) -> tuple[str, int, str, str, list[Cit
     if cat == "airline":
         deadline_days = 7
         summary = (
-            "Under DGCA CAR Section 3, Series M, Part IV, airlines must process refunds for cancelled flights "
-            "within 7 working days for credit card transactions, or immediately for cash. Passengers are entitled "
-            "to compensation for flight cancellation/delay and baggage loss up to statutory limits."
+            "Under DGCA CAR Section 3, Series M, Part II, airlines must process refunds for credit card cancellations "
+            "within 7 working days (or immediately for cash). Booking portals/agents must disburse within 14 working days. "
+            "Under Part IV, passengers are entitled to compensation and facilities for cancellations or delays."
         )
         next_tier = "AirSewa Portal (Ministry of Civil Aviation) & NCH"
         next_how = "File grievance at airsewa.gov.in or National Consumer Helpline (1915)"
         citations.append(
             Citation(
-                title="DGCA CAR Section 3, Series M, Part IV",
+                title="DGCA CAR Section 3, Series M, Part II",
                 url="https://www.dgca.gov.in",
-                section="Part IV - Refund of Airline Tickets",
-                note="Mandates ticket refund within 7 working days for credit cards.",
+                section="Part II, Para 3.3.2 (Refund of Airline Tickets)",
+                note="Mandates ticket refund within 7 working days for credit cards and 14 days for agent bookings.",
             )
         )
         citations.append(
@@ -183,9 +183,9 @@ def analyze_rights_and_laws(category: str) -> tuple[str, int, str, str, list[Cit
     else:  # E-commerce default
         deadline_days = 30
         summary = (
-            "Under Rule 5(4) of the Consumer Protection (E-Commerce) Rules, 2020, the e-commerce entity is legally mandated "
-            "to acknowledge receipt of any consumer grievance within 48 hours and redress it within 1 month. "
-            "Delivering damaged goods or refusing a refund is an unfair trade practice under Section 2(47) and deficiency of service."
+            "Under Rule 4(4) and Rule 4(5) of the Consumer Protection (E-Commerce) Rules, 2020, every e-commerce entity is legally mandated "
+            "to appoint a Grievance Officer, acknowledge receipt of any consumer grievance within 48 hours, and redress it within 1 month. "
+            "Delivering damaged goods or refusing a refund is an unfair trade practice under Section 2(47) and deficiency of service under Section 2(11)."
         )
         next_tier = "National Consumer Helpline (NCH) & e-Daakhil"
         next_how = "File on consumerhelpline.gov.in (Toll-free 1915) or e-Daakhil portal (edaakhil.nic.in)"
@@ -193,8 +193,8 @@ def analyze_rights_and_laws(category: str) -> tuple[str, int, str, str, list[Cit
             Citation(
                 title="Consumer Protection (E-Commerce) Rules, 2020",
                 url="https://consumeraffairs.nic.in/acts-and-rules/consumer-protection/consumer-protection-e-commerce-rules-2020",
-                section="Rule 5(4) - Grievance Redressal Mechanism",
-                note="Mandates 48-hour acknowledgment and 30-day final redressal.",
+                section="Rule 4(4) & Rule 4(5) - Grievance Redressal Mechanism",
+                note="Mandates appointment of Grievance Officer, 48-hour acknowledgment, and 30-day final redressal.",
             )
         )
         citations.append(
@@ -205,6 +205,7 @@ def analyze_rights_and_laws(category: str) -> tuple[str, int, str, str, list[Cit
                 note="Guarantees consumer right to seek redressal and direct filing via e-Daakhil.",
             )
         )
+
 
     return summary, deadline_days, next_tier, next_how, citations
 
@@ -231,8 +232,9 @@ agent = Agent(
     name="reclaimai_researcher",
     seed=RESEARCHER_SEED,
     port=8002,
-    endpoint=["http://127.0.0.1:8002/submit"],
+    endpoint=None if AGENTVERSE_API_KEY else ["http://127.0.0.1:8002/submit"],
     mailbox=bool(AGENTVERSE_API_KEY),
+
     agentverse="https://agentverse.ai",
     network="testnet",
 )
