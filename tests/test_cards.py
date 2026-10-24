@@ -66,9 +66,16 @@ def test_parse_selection_json():
 
 
 def test_parse_selection_prose_fallback():
-    prose = "The user approved the draft to dispatch."
-    parsed = parse_selection(prose)
-    assert parsed.get("action") == "approve_dispatch"
+    # Short whole-message commands are text equivalents of card buttons.
+    assert parse_selection("approve")["action"] == "approve_dispatch"
+    assert parse_selection("yes, go ahead")["action"] == "approve_dispatch"
+    assert parse_selection("no")["action"] == "reject_or_edit"
+    assert parse_selection("retry")["action"] == "retry"
+
+    # Long complaint prose must never be misrouted into a card action even
+    # when it incidentally contains "approve"/"confirm".
+    prose = "The company refused to confirm my refund after the comment got approved internally, this is unacceptable behaviour from the seller."
+    assert parse_selection(prose).get("action") is None
 
 
 def test_build_strength_and_edaakhil_cards():

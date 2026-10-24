@@ -191,9 +191,10 @@ def build_edaakhil_card(case_id: str, edaakhil_data: dict[str, Any]) -> dict[str
 
 
 def build_health_card(components: list[dict[str, str]]) -> dict[str, Any]:
-    """Build a Detail Card presenting system-wide health and reachability."""
+    """Build a Detail Card presenting honest system health (no fabricated
+    telemetry — components carry name/status only)."""
     rows = [
-        {"label": c["name"], "value": f"{c['status']} ({c['latency']})"}
+        {"label": c["name"], "value": c["status"]}
         for c in components
     ]
     return build_detail_card(
@@ -237,12 +238,19 @@ def parse_selection(text: str) -> dict[str, Any]:
         except Exception:
             pass
 
-    # 3. Fallback: only match explicit confirmation / rejection phrases
+    # 3. Fallback: only a short, whole-message command counts as a text
+    #    equivalent of a card button (button fallbacks like "approve" / "no"
+    #    / "retry"). Longer prose may contain "approve"/"confirm" inside an
+    #    ordinary complaint and must NEVER be misrouted into a card action.
     extracted: dict[str, Any] = {"raw": text}
     lower = cleaned.lower()
-    if ("approve" in lower or "confirm" in lower) and not ("not approve" in lower or "don't approve" in lower):
-        extracted["action"] = "approve_dispatch"
-    elif lower in ("reject", "cancel", "edit", "no", "reject & edit", "cancel notice"):
-        extracted["action"] = "reject_or_edit"
+    if len(cleaned) <= 48:
+        first_word = lower.split(" ", 1)[0]
+        if first_word.rstrip(",.!?") in ("approve", "yes", "ok", "okay", "confirm", "confirmed"):
+            extracted["action"] = "approve_dispatch"
+        elif first_word.rstrip(",.!?") in ("reject", "cancel", "edit", "no", "discard"):
+            extracted["action"] = "reject_or_edit"
+        elif first_word.rstrip(",.!?") == "retry":
+            extracted["action"] = "retry"
 
     return extracted
