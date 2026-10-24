@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import re
 import time
 
 from datetime import datetime, timezone
@@ -41,13 +43,16 @@ from common.cards import (
 )
 from common.config import (
     AGENTVERSE_API_KEY,
+    ASI_ONE_API_KEY,
     CONCIERGE_ADDRESS,
     CONCIERGE_SEED,
+    DEMO_MODE,
     DISPATCHER_ADDRESS,
     DRAFTER_ADDRESS,
     FET_PAYMENT_AMOUNT,
     FET_USE_TESTNET,
     RESEARCHER_ADDRESS,
+    RESEND_API_KEY,
     WATCHER_ADDRESS,
 )
 from common.db import (
@@ -66,8 +71,10 @@ from common.llm import (
     compute_case_strength,
     generate_edaakhil_packet,
     generate_rebuttal_draft,
+    heuristic_extraction,
 )
 from common.logging import (
+    log_error,
     log_inbound,
     log_outbound,
     log_payment,
@@ -108,6 +115,74 @@ if os.getenv("TESTING") != "1" and agent.wallet:
 # In-memory session tracking
 # Keyed by sender address: {"case_id": ..., "state": ..., "facts": ..., "research": ..., "draft": ...}
 active_sessions: dict[str, dict[str, Any]] = {}
+
+# --- Typed-text equivalents of card buttons (button click -> selection JSON,
+# --- or these short whole-message commands when buttons are unavailable).
+_YES_TOKENS = {
+    "1", "yes", "yes!", "yep", "ok", "ok!", "okay", "go ahead", "go", "proceed",
+    "continue", "approve", "approve, go ahead", "confirmed", "confirm", "correct", "sure",
+}
+_NO_TOKENS = {"2", "no", "no!", "nope", "cancel", "edit", "wrong", "reject"}
+
+# Session state -> the pending interactive card's two actions.
+PENDING_CARD_ACTIONS: dict[str, dict[str, str | None]] = {
+    "IDLE": {"yes": None, "no": None},
+    "FORM_PRESENTED": {"yes": "submit_case_facts", "no": "reject_or_edit"},
+    "INTAKE_CONFIRMATION": {"yes": "submit_case_facts", "no": "reject_or_edit"},
+    "RESEARCHING": {"yes": None, "no": None},
+    "RESEARCH_COMPLETED": {"yes": "proceed_to_draft", "no": None},
+    "DRAFTING": {"yes": None, "no": None},
+    "DRAFT_REVIEW": {"yes": "approve_dispatch", "no": "reject_or_edit"},
+    "REBUTTAL_PENDING": {"yes": "send_rebuttal", "no": "reject_or_edit"},
+    "ULTIMATUM_SENT": {"yes": "send_rebuttal", "no": "reject_or_edit"},
+    "DISPATCHING": {"yes": None, "no": None},
+    "WAITING": {"yes": None, "no": None},
+    "ESCALATED": {"yes": None, "no": None},
+}
+
+# Session state -> primary action to re-run for "retry".
+PENDING_PRIMARY: dict[str, str | None] = {
+    "FORM_PRESENTED": "submit_case_facts",
+    "INTAKE_CONFIRMATION": "submit_case_facts",
+    "RESEARCHING": "submit_case_facts",
+    "RESEARCH_COMPLETED": "proceed_to_draft",
+    "DRAFTING": "proceed_to_draft",
+    "DRAFT_REVIEW": "approve_dispatch",
+    "REBUTTAL_PENDING": "send_rebuttal",
+    "ULTIMATUM_SENT": "send_rebuttal",
+}
+
+INTENT_TIMEOUT_S = 12.0
+
+
+def resolve_text_action(session: dict[str, Any], clean_lower: str) -> str | None:
+    """Map a short typed reply (\"1\", \"yes\", \"cancel\"...) to the pending
+    card's action. Returns None when there is no pending card or no match."""
+    pending = PENDING_CARD_ACTIONS.get(session.get("state", "IDLE"), {})
+    if clean_lower in _YES_TOKENS and pending.get("yes"):
+        return str(pending["yes"])
+    if clean_lower in _NO_TOKENS and pending.get("no"):
+        return str(pending["no"])
+    return None
+
+
+def card_state_message(state: str) -> str:
+    """One-line explanation + next step hint for the current session state."""
+    hints = {
+        "IDLE": "Tell me what happened in your own words to open a case.",
+        "FORM_PRESENTED": "Review the intake card (or reply 1 = confirm facts, 2 = edit).",
+        "INTAKE_CONFIRMATION": "Reply 1 to confirm the disputed details on the card.",
+        "RESEARCHING": "Researcher agent is querying statutes and grievance contacts...",
+        "RESEARCH_COMPLETED": "Reply 1 to proceed to formal notice drafting.",
+        "DRAFTING": "Drafter agent is formulating the statutory notice...",
+        "DRAFT_REVIEW": "Reply 1 to approve & dispatch, or 2 to edit/cancel.",
+        "REBUTTAL_PENDING": "Reply 1 to send the statutory rebuttal, or 2 to edit.",
+        "ULTIMATUM_SENT": "Reply 1 to serve the 24-hour ultimatum, or 2 to edit.",
+        "DISPATCHING": "Dispatcher agent is sending the notice now...",
+        "WAITING": "Watcher agent is monitoring the statutory deadline (/status for the timeline).",
+        "ESCALATED": "Case escalated to Tier-2 regulatory redressal (/status for the timeline).",
+    }
+    return hints.get(state, state)
 
 # Protocols
 chat_proto = Protocol(spec=chat_protocol_spec)
@@ -159,80 +234,194 @@ async def handle_chat_message(ctx: Context, sender: str, msg: ChatMessage):
     # 1. Immediate Protocol ACK
     ack = ChatAcknowledgement(timestamp=datetime.now(timezone.utc), acknowledged_msg_id=msg.msg_id)
     log_outbound(ctx, "ChatAcknowledgement", sender, f"ack={msg.msg_id}")
-    await ctx.send(sender, ack)
+    try:
+        await ctx.send(sender, ack)
+    except Exception as exc:
+        log_error(ctx, "ack send failed", str(exc))
 
     session = get_or_create_session(sender)
 
-    # 2. Process content
+    # 2. Process content — every item is crash-proofed: any raised exception
+    #    must never leave the user with a silent spinner.
     for item in msg.content:
-        if isinstance(item, StartSessionContent):
-            log_state(ctx, "session_started", f"sender={sender}")
-            greeting = (
-                "👋 Welcome to ReclaimAI! I am your autonomous consumer rights champion for India. "
-                "Did a company deliver damaged goods, refuse a refund, cancel your flight, or impose wrong bank charges? "
-                "Tell me what happened, and I will research your rights under the Consumer Protection Act 2019, "
-                "draft a formal legal notice, dispatch it to the Grievance Officer, and autonomously follow up!"
-            )
-            reply = create_text_chat(greeting)
-            log_outbound(ctx, "ChatMessage", sender, f"greeting={reply.msg_id}")
-            await ctx.send(sender, reply)
+        try:
+            if isinstance(item, StartSessionContent):
+                log_state(ctx, "session_started", f"sender={sender}")
+                greeting = (
+                    "👋 Welcome to ReclaimAI! I am your autonomous consumer rights champion for India. "
+                    "Did a company deliver damaged goods, refuse a refund, cancel your flight, or impose wrong bank charges? "
+                    "Tell me what happened, and I will research your rights under the Consumer Protection Act 2019, "
+                    "draft a formal legal notice, dispatch it to the Grievance Officer, and autonomously follow up!"
+                )
+                reply = create_text_chat(greeting)
+                log_outbound(ctx, "ChatMessage", sender, f"greeting={reply.msg_id}")
+                await ctx.send(sender, reply)
 
-        elif isinstance(item, TextContent):
-            user_text = (item.text or "").strip()
-            log_inbound(ctx, "TextContent", sender, f"text={user_text}")
+            elif isinstance(item, TextContent):
+                user_text = (item.text or "").strip()
+                log_inbound(ctx, "TextContent", sender, f"text={user_text}")
 
-            # Strip mention prefix (@reclaim-ai, @agent1q...)
-            clean_text = re.sub(r"^@[\w-]+\s*", "", user_text).strip()
-            clean_lower = clean_text.lower()
+                # Strip mention prefix (@reclaim-ai, @agent1q...)
+                clean_text = re.sub(r"^@[\w-]+\s*", "", user_text).strip()
+                clean_lower = clean_text.lower()
 
-            # 1. First, check explicit slash commands so handles like '@reclaim-ai /health' always fire
-            if clean_lower in ("/health", "health", "system health", "diagnostics"):
-                await handle_health_command(ctx, sender)
-                continue
-            elif clean_lower.startswith("/reply") or clean_lower.startswith("reply") or "replied:" in clean_lower or "company response:" in clean_lower:
-                await handle_company_reply(ctx, sender, session, clean_text)
-                continue
-            elif clean_lower in ("/edaakhil", "edaakhil", "petition", "filing packet"):
-                await handle_edaakhil_command(ctx, sender, session)
-                continue
-            elif clean_lower in ("/status", "status", "timeline", "case status"):
-                await handle_status_command(ctx, sender, session)
-                continue
-            elif any(w in clean_lower for w in ["/pay", "purchase", "priority tracking", "payment protocol", "enable tracking", "upgrade"]):
-                await prompt_payment_protocol(ctx, sender, session["case_id"])
-                continue
+                # 1. Explicit slash commands first so handles like '@reclaim-ai /health' always fire.
+                #    /ping and /cardtest answer instantly for live-responsiveness checks.
+                if clean_lower in ("/ping", "ping"):
+                    await handle_ping_command(ctx, sender, session)
+                    continue
+                elif clean_lower in ("/cardtest", "cardtest", "card test"):
+                    await handle_cardtest_command(ctx, sender)
+                    continue
+                elif clean_lower in ("/health", "health", "system health", "diagnostics"):
+                    await handle_health_command(ctx, sender)
+                    continue
+                elif clean_lower.startswith("/reply") or clean_lower.startswith("reply") or "replied:" in clean_lower or "company response:" in clean_lower:
+                    await handle_company_reply(ctx, sender, session, clean_text)
+                    continue
+                elif clean_lower in ("/edaakhil", "edaakhil", "petition", "filing packet"):
+                    await handle_edaakhil_command(ctx, sender, session)
+                    continue
+                elif clean_lower in ("/status", "status", "timeline", "case status"):
+                    await handle_status_command(ctx, sender, session)
+                    continue
+                elif any(w in clean_lower for w in ["/pay", "purchase", "priority tracking", "payment protocol", "enable tracking", "upgrade"]):
+                    await prompt_payment_protocol(ctx, sender, session["case_id"])
+                    continue
 
-            # 2. Check if this is a card action from selection payload
-            selection = parse_selection(user_text)
-            action = selection.get("action")
+                # 2. Typed equivalents of the currently pending card's buttons:
+                #    "1"/"yes" = primary, "2"/"no" = secondary, "retry" = re-run last step.
+                mapped = resolve_text_action(session, clean_lower)
+                if mapped:
+                    await run_card_action(ctx, sender, session, mapped)
+                    continue
+                if clean_lower == "retry":
+                    await handle_retry(ctx, sender, session)
+                    continue
 
-            # Route by action or intent
-            if action == "submit_case_facts":
-                await handle_form_submit(ctx, sender, session, selection)
-            elif action == "proceed_to_draft":
-                await handle_proceed_to_draft(ctx, sender, session)
-            elif action == "approve_dispatch":
-                await handle_approve_dispatch(ctx, sender, session)
-            elif action == "reject_or_edit":
-                await handle_reject_or_edit(ctx, sender, session)
-            elif action == "send_rebuttal":
-                await handle_send_rebuttal(ctx, sender, session)
-            elif action == "view_edaakhil_petition":
-                await handle_view_edaakhil_petition(ctx, sender, session)
-            elif action == "check_health":
-                await handle_health_command(ctx, sender)
-            elif action == "status":
-                await handle_status_command(ctx, sender, session)
-            else:
-                await handle_initial_complaint_intent(ctx, sender, session, clean_text)
+                # 3. Card selection payloads (button clicks arrive as JSON).
+                selection = parse_selection(user_text)
+                action = selection.get("action")
 
-        elif isinstance(item, EndSessionContent):
-            log_state(ctx, "session_ended", f"sender={sender}")
+                if action:
+                    await run_card_action(ctx, sender, session, action, selection)
+                else:
+                    # Ordinary complaint / question. Greet AND process on the
+                    # very first message: no message is ever swallowed.
+                    await handle_initial_complaint_intent(ctx, sender, session, clean_text)
+
+            elif isinstance(item, EndSessionContent):
+                log_state(ctx, "session_ended", f"sender={sender}")
+
+        except Exception as exc:
+            log_error(ctx, f"handle_chat_message step={type(item).__name__}", str(exc))
+            try:
+                await ctx.send(
+                    sender,
+                    create_text_chat(
+                        f"⚠️ Something failed at step {type(item).__name__} while processing your last message. "
+                        "Reply **retry** to go again, or /status for a snapshot."
+                    ),
+                )
+            except Exception:
+                log_error(ctx, "handle_chat_message", "failed to send the error text reply")
 
 
 @chat_proto.on_message(ChatAcknowledgement)
 async def handle_ack(ctx: Context, sender: str, msg: ChatAcknowledgement):
     log_inbound(ctx, "ChatAcknowledgement", sender, f"ack_msg_id={msg.acknowledged_msg_id}")
+
+
+async def run_card_action(
+    ctx: Context,
+    sender: str,
+    session: dict[str, Any],
+    action: str,
+    selection: dict[str, Any] | None = None,
+) -> None:
+    """Central card-action switch — every card button and its typed text
+    equivalent funnel through here."""
+    log_state(ctx, "card_action", f"sender={sender} action={action}")
+    if action == "submit_case_facts":
+        await handle_form_submit(ctx, sender, session, selection or {})
+    elif action == "proceed_to_draft":
+        await handle_proceed_to_draft(ctx, sender, session)
+    elif action == "approve_dispatch":
+        await handle_approve_dispatch(ctx, sender, session)
+    elif action == "reject_or_edit":
+        await handle_reject_or_edit(ctx, sender, session)
+    elif action == "send_rebuttal":
+        await handle_send_rebuttal(ctx, sender, session)
+    elif action == "view_edaakhil_petition":
+        await handle_view_edaakhil_petition(ctx, sender, session)
+    elif action == "check_health":
+        await handle_health_command(ctx, sender)
+    elif action == "status":
+        await handle_status_command(ctx, sender, session)
+    else:
+        log_error(ctx, f"unknown card action '{action}'", "falling back to intent handling")
+        await handle_initial_complaint_intent(ctx, sender, session, str(selection or {}))
+
+
+async def handle_retry(ctx: Context, sender: str, session: dict[str, Any]):
+    """Re-run the last pending step for the current session state; if the
+    state has no retryable step, show the live timeline instead."""
+    state = session.get("state", "IDLE")
+    pending = PENDING_PRIMARY.get(state)
+    if pending:
+        log_state(ctx, "retry", f"sender={sender} state={state} re-runs {pending}")
+        try:
+            await run_card_action(ctx, sender, session, pending)
+        except Exception as exc:
+            log_error(ctx, f"retry {pending} failed", str(exc))
+            await ctx.send(
+                sender,
+                create_text_chat(
+                    f"⚠️ The retry of **{pending}** failed again: {type(exc).__name__}. "
+                    "Reply **/status** for a snapshot, or describe the issue again."
+                ),
+            )
+        return
+    await handle_status_command(ctx, sender, session)
+
+
+async def handle_ping_command(ctx: Context, sender: str, session: dict[str, Any]):
+    """Instant liveness probe for live-responsiveness checks."""
+    log_inbound(ctx, "Command", sender, "/ping")
+    case_id = session.get("case_id")
+    state = session.get("state", "IDLE")
+    reply = create_text_chat(
+        f"🏓 pong concierge alive| Agentverse mailbox={'on' if AGENTVERSE_API_KEY else 'off'}| "
+        f"Active case: {case_id}| Step: {state}{'' if state == 'IDLE' else ' - ' + card_state_message(state)}"
+    )
+    await ctx.send(sender, reply)
+
+
+async def handle_cardtest_command(ctx: Context, sender: str):
+    """Send a diagnostic review card on demand — verifies card rendering and
+    gives the user two working button + text fallback paths."""
+    log_inbound(ctx, "Command", sender, "/cardtest")
+    payload = build_review_card(
+        title="Card Diagnostic - Review Schema",
+        summary_rows=[
+            {"label": "Schema", "value": "review (approve/reject CTAs)"},
+            {"label": "Protocol", "value": "card_protocol_version 1"},
+            {"label": "Text Fallback", "value": "reply 1 to approve, 2 to reject"},
+        ],
+        approve_label="Test Approve (opens /health)",
+        reject_label="Test Reject (opens /status)",
+        approve_action="check_health",
+        reject_action="status",
+    )
+    msg = card_message(
+        narration="🧪 Card diagnostic: if this card renders, the review schema works. "
+        "Buttons or typed 1/2 both respond.",
+        card_kind="review",
+        payload=payload,
+        is_terminal=True,
+    )
+    log_outbound(ctx, "ChatMessage[Card:Review]", sender, "cardtest diagnostic")
+    await ctx.send(sender, msg)
 
 
 # ==============================================================================
@@ -244,7 +433,28 @@ async def handle_initial_complaint_intent(
     ctx: Context, sender: str, session: dict[str, Any], user_text: str
 ):
     """Step 1: Classify intent and present the interactive intake Confirmation Card."""
-    extracted = classify_intent_and_extract(user_text)
+    if session.get("state") == "FORM_PRESENTED":
+        # A complaint while the intake card is pending: refresh the card with
+        # the new details instead of silently analyzing and stalling.
+        record_event(session["case_id"], "INTAKE_UPDATED", f"User refined dispute facts: '{user_text[:80]}'")
+
+    # Fast language first: narrate instantly so the user is never left
+    # spinning while the LLM extraction runs.
+    instant = create_text_chat(
+        "🧠 Noted. Analyzing your dispute against the Consumer Protection Act, 2019 and the "
+        "Consumer Protection (E-Commerce) Rules, 2020 — extracting order, amount and parties right now."
+    )
+    await ctx.send(sender, instant)
+
+    try:
+        extracted = await asyncio.wait_for(
+            asyncio.to_thread(classify_intent_and_extract, user_text),
+            timeout=INTENT_TIMEOUT_S,
+        )
+    except Exception as exc:  # noqa: BLE001 — degrade to heuristics, never stall
+        log_error(ctx, f"classify_intent_and_extract degraded ({type(exc).__name__})", "using deterministic heuristic extraction")
+        extracted = heuristic_extraction(user_text)
+
     session["facts"] = extracted
     session["state"] = "FORM_PRESENTED"
     case_id = session["case_id"]
@@ -254,12 +464,14 @@ async def handle_initial_complaint_intent(
     amount_val = str(extracted.get("amount_inr", "")) if extracted.get("amount_inr") else "Full Refund"
     summary_val = extracted.get("issue_summary", user_text)
 
-    # Save to SQLite
+    # Save to SQLite (explicit contract: db.save_case(case_id, user_addr,
+    # category, company, facts_json, status))
     save_case(
         case_id=case_id,
-        user_address=sender,
+        user_addr=sender,
+        category=extracted.get("category", "other"),
         company=company_val,
-        facts=extracted,
+        facts_json=json.dumps(extracted),
         status="INTAKE_CONFIRMATION",
     )
     record_event(case_id, "INTAKE_STARTED", f"Dispute logged for {company_val}: '{user_text[:80]}'")
@@ -880,7 +1092,6 @@ async def handle_send_rebuttal(ctx: Context, sender: str, session: dict[str, Any
 
     dispatch_req = DispatchRequest(
         case_id=case_id,
-        tier=1,
         to_email=to_email,
         cc_email=facts.get("user_email") or "consumer.copy@reclaimai.org",
         subject=subject,
@@ -940,21 +1151,33 @@ async def handle_view_edaakhil_petition(ctx: Context, sender: str, session: dict
 
 
 async def handle_health_command(ctx: Context, sender: str):
-    """Step 8: System health and diagnostic inspection card."""
+    """System health and diagnostic inspection card — honest, config-derived
+    statuses; never fabricated telemetry."""
     log_inbound(ctx, "Command", sender, "/health")
+    try:
+        get_case("__health_probe__")
+        db_status = "CONNECTED"
+    except Exception as exc:
+        log_error(ctx, "health DB probe failed", str(exc))
+        db_status = "ERROR (probe failed)"
+
     components = [
-        {"name": "ReclaimAI Concierge (Port 8001)", "status": "ONLINE", "latency": "2ms"},
-        {"name": "ReclaimAI Researcher (Port 8002)", "status": "ONLINE", "latency": "4ms"},
-        {"name": "ReclaimAI Drafter (Port 8003)", "status": "ONLINE", "latency": "3ms"},
-        {"name": "ReclaimAI Dispatcher (Port 8004)", "status": "ONLINE", "latency": "5ms"},
-        {"name": "ReclaimAI Watcher (Port 8005)", "status": "ONLINE", "latency": "2ms"},
-        {"name": "SQLite Case Storage (cases.db)", "status": "CONNECTED", "latency": "1ms"},
-        {"name": "ASI:One LLM Engine (api.asi1.ai)", "status": "ACTIVE", "latency": "210ms"},
-        {"name": "Resend Notice Dispatcher", "status": "ACTIVE / SANDBOX READY", "latency": "15ms"},
-        {"name": "Fetch.ai Testnet Ledger (atestfet)", "status": "CONNECTED", "latency": "180ms"},
+        {"name": "ReclaimAI Concierge (Port 8001)", "status": "RUNNING (this agent)"},
+        {"name": "ReclaimAI Researcher (Port 8002)", "status": "PEER — registered via Bureau"},
+        {"name": "ReclaimAI Drafter (Port 8003)", "status": "PEER — registered via Bureau"},
+        {"name": "ReclaimAI Dispatcher (Port 8004)", "status": "PEER — registered via Bureau"},
+        {"name": "ReclaimAI Watcher (Port 8005)", "status": "PEER — registered via Bureau"},
+        {"name": "SQLite Case Storage (cases.db)", "status": db_status},
+        {"name": "ASI:One LLM (api.asi1.ai)", "status": "LIVE KEY SET" if ASI_ONE_API_KEY else "FALLBACK HEURISTICS (no key)"},
+        {"name": "Resend Notice Dispatcher", "status": "LIVE" if RESEND_API_KEY else "SIMULATED (no key)"},
+        {"name": "Demo Mode Safeguard", "status": "ON" if DEMO_MODE else "OFF"},
+        {"name": "Fetch.ai Testnet Ledger (atestfet)", "status": "SELECTED" if FET_USE_TESTNET else "MAINNET SELECTED"},
     ]
     card = build_health_card(components)
-    narration = "🩺 **ReclaimAI Multi-Agent Diagnostic Report**: All 5 agents, storage, and protocols are operating nominally."
+    narration = (
+        "🩺 **ReclaimAI Multi-Agent Diagnostic Report**: honest configuration snapshot — "
+        "PEER statuses reflect Bureau registration; LLM/email rows show live vs fallback."
+    )
     await ctx.send(sender, card_message(narration, "detail", card, is_terminal=True))
 
 
