@@ -109,6 +109,7 @@ async def on_request_payment(ctx: Context, sender: str, msg: RequestPayment):
     commit = CommitPayment(
         transaction_id=tx_hash,
         funds=msg.accepted_funds[0],
+        recipient=msg.recipient,
         metadata={"buyer_fet_wallet": str(buyer.wallet.address())},
     )
     ctx.logger.info(f"Submitting CommitPayment(tx_id={tx_hash}) -> Concierge...")

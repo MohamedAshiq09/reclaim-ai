@@ -105,11 +105,14 @@ All 5 agents run on **Fetch.ai Testnet** with deterministic seeds:
 4. **Pecuniary Jurisdiction (Rules 2021)**: Verified District Commission threshold at ₹50 Lakhs (revised from 2019 Act ₹1 Crore).
 5. **Strict Payment Security**: Removed silent sandbox payment bypass; require `DEMO_PAYMENT_BYPASS=1` explicitly if testing offline.
 6. **Card Metadata Compliance**: Confirmed both `requires_card_interaction` and `is_terminal` are correctly handled according to Predefined Card Schemas v1.
+7. **Payment Protocol Schema Compliance**: Aligned `RequestPayment` with `accepted_funds`, `recipient`, `deadline_seconds`, `reference`, `description`, and `metadata` to prevent Pydantic validation exceptions. Added `recipient` to `CommitPayment`.
+8. **Reply-Aware Decision Loop**: Integrated `/reply <text>` endpoint using ASI:One LLM classifier (`resolved`, `rejected`, `stalling`, `needs_info`) with automated rebuttal legal drafting.
+9. **Reliability Drill**: Validated 3-part resilience drill (search outage fallback, email degradation handling, strict on-chain payment rejection) via `scripts/failure_drill.py`.
 
 ---
 
 ## 8. Known Issues and Failing Tests
-- **Failing Tests**: **ZERO** (14 of 14 unit tests passing).
+- **Failing Tests**: **ZERO** (15 of 15 unit tests passing).
 - **Proactive Notification**: ASI:One chat sessions cannot be initiated proactively by the agent if the user closes the window. Escalation updates are delivered reliably through the `/status` command, which renders the live chronological audit trail card.
 
 ---
@@ -133,15 +136,17 @@ All 5 agents run on **Fetch.ai Testnet** with deterministic seeds:
 
 ---
 
-## 11. Next 3 Actions
-1. **Set `DEMO_RECIPIENT_OVERRIDE` and optional `RESEND_API_KEY` in `.env`** to receive real emails.
-2. **Start the Bureau runner** (`python run_bureau.py`) on a persistent terminal.
-3. **Open ASI:One, run the live demo prompt, and generate the Public Shared Chat URL**.
+## 11. Next Actions for Final Submission
+1. **Launch Bureau Runner**: Run `python run_bureau.py` (daemonized/persistent).
+2. **ASI:One Live Validation**: Open ASI:One, send prompt, verify form card, rights card, approval, real Resend dispatch, `/reply`, and `/health`.
+3. **Copy Public Shared Chat URL**: Click "Share Chat" inside ASI:One.
+4. **Record 3–5 min Demo Video**: Follow `docs/demo_script.md`.
+5. **Dashboard Agent Submission**: Submit repo URL + video URL + shared chat URL before 17:50 IST.
 
 ---
 
 ## 12. Resume Instructions for a Fresh Session
 1. Read this file (`anchor.md`) completely.
-2. Run `TESTING=1 PYTHONPATH=. .venv/bin/pytest tests/` to confirm all 14 tests pass.
-3. Verify that all 5 agents are active on Agentverse (`python -c "import asyncio, aiohttp; ..."`).
+2. Run `TESTING=1 PYTHONPATH=. .venv/bin/pytest tests/` to confirm all 15 tests pass.
+3. Run `python scripts/failure_drill.py` to verify reliability.
 4. Launch the agents: `python run_bureau.py`.

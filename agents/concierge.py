@@ -617,7 +617,11 @@ async def prompt_payment_protocol(ctx: Context, sender: str, case_id: str):
 
     wallet_addr = str(agent.wallet.address()) if agent.wallet else "fetch1gjk4luq0w2ceuvd92yy6exj56kcdlc6lwggswe"
     req_payment = RequestPayment(
-        funds=payment_funds,
+        accepted_funds=payment_funds,
+        recipient=wallet_addr,
+        deadline_seconds=3600,
+        reference=str(uuid4()),
+        description="ReclaimAI Auto-Escalation & Multi-Tier Enforcement Pack",
         metadata={
             "fet_network": "stable-testnet" if FET_USE_TESTNET else "mainnet",
             "provider_agent_wallet": wallet_addr,

@@ -164,6 +164,73 @@ python scripts/seed_demo_case.py
 
 ---
 
+## 💡 Try These Prompts (Judges & Explorers)
+
+Judges can test ReclaimAI directly in **ASI:One** (by searching for `@reclaim-ai` or chatting on the Concierge agent page):
+
+| Sector | Example Prompt | Key Statutory Rights Invoked |
+| :--- | :--- | :--- |
+| **E-Commerce** | `Flipkart delivered a broken Samsung Galaxy phone worth ₹24,999 and refused my refund.` | Consumer Protection (E-Commerce) Rules, 2020: **Rule 4(4)** Grievance Officer, **Rule 4(5)** 48h ACK / 30d resolution. |
+| **Airlines** | `IndiGo flight 6E-204 was cancelled and refund of ₹8,450 was not credited after 14 days.` | DGCA CAR Section 3, Series M, **Part II (Para 3.3)**: 7-day refund for credit card cancellations directly to account. |
+| **Banking / UPI** | `Dispute unauthorized international transaction of ₹14,200 on HDFC credit card.` | RBI Integrated Ombudsman Scheme, 2021 (**Clause 10 & 15**): 30-day escalation and statutory compensation. |
+
+---
+
+## 🧠 Reply-Aware Decision Loop & Interactive Commands
+
+ReclaimAI moves beyond passive pipelines to an **adaptive decision-making agent**:
+
+1. **Reply-Aware Decision Loop (`/reply <company response>`)**:
+   - When the disputed company sends an email response, the consumer pastes it into chat:
+     ```
+     /reply Flipkart Support: "We have reviewed your request and regret to inform that return is rejected because the package was accepted at doorstep."
+     ```
+   - ReclaimAI's Concierge uses the **ASI:One LLM** to classify the reply into:
+     - `resolved` -> Closes case, updates timeline, records settlement.
+     - `rejected` -> Generates an assertive, statutory legal rebuttal citing mandatory rules (e.g. CPA 2019 Sec 2(47)) and presents an Interactive Review Card.
+     - `stalling` -> Warns company of impending escalation to National Consumer Helpline (NCH) and e-Daakhil.
+     - `needs_info` -> Guides consumer on specific documents needed to refute company claims.
+
+2. **Case Strength Analysis & e-Daakhil Filing Packet (`/edaakhil`)**:
+   - Evaluates claim strength (score 0–100), flags missing evidence, confirms pecuniary forum jurisdiction (District <= ₹50 Lakhs under 2021 Rules), and generates a ready-to-file formal e-Daakhil consumer commission petition.
+
+3. **Bureau Health & Diagnostics (`/health`)**:
+   - Renders a live Interactive Diagnostic Card showing reachability, mailbox health, memory, and last errors across all five agents.
+
+---
+
+## 🤝 Autonomous Agent-to-Agent Payment Demo
+
+In addition to user-initiated ACP chat, ReclaimAI includes a standalone **Autonomous Buyer Agent** demonstrating machine-to-machine on-chain commerce:
+
+```bash
+# Run the autonomous buyer agent (pays 0.001 FET on Fetch.ai testnet)
+python scripts/run_buyer_agent.py
+```
+**Workflow**:
+1. Buyer Agent initiates ACP chat with `ReclaimAI Concierge`.
+2. Requests Priority Regulatory Escalation Pack.
+3. Concierge issues `RequestPayment` with testnet parameters.
+4. Buyer signs and broadcasts `0.001 FET` on-chain transfer via `cosmpy`.
+5. Buyer submits `CommitPayment(tx_hash=...)`.
+6. Concierge queries the Fetch.ai ledger via Cosmpy, verifies the transaction, and issues `CompletePayment`.
+
+---
+
+## 🛡️ Reliability & Failure Resilience Drill
+
+ReclaimAI is engineered for production-grade resilience against third-party failures:
+
+```bash
+# Run the 3-part failure drill
+python scripts/failure_drill.py
+```
+- **Drill 1 (Search API Outage)**: Verified graceful fallback to the curated statutory gazette registry.
+- **Drill 2 (Email Service Outage)**: Graceful handling of network degradation and structured retry logging.
+- **Drill 3 (Payment Fraud Prevention)**: Strict Cosmpy on-chain rejection of unconfirmed or fraudulent transaction hashes.
+
+---
+
 ## 📚 Official Citations & Verified Statutory Sources
 
 All legal rules implemented in ReclaimAI have been verified against official government gazettes:
@@ -171,7 +238,6 @@ All legal rules implemented in ReclaimAI have been verified against official gov
 - **Consumer Protection (E-Commerce) Rules, 2020 (Rule 4(4) & 4(5))**: [Ministry of Consumer Affairs](https://consumeraffairs.nic.in/acts-and-rules/consumer-protection/consumer-protection-e-commerce-rules-2020)
 - **Consumer Protection Act, 2019 (Act 35 of 2019)**: [Department of Consumer Affairs](https://consumeraffairs.nic.in)
 - **DGCA Civil Aviation Requirements (CAR Section 3, Series M, Part II & Part IV)**: [Directorate General of Civil Aviation](https://www.dgca.gov.in)
-
 - **Reserve Bank Integrated Ombudsman Scheme, 2021**: [Reserve Bank of India](https://cms.rbi.org.in)
 - **National Consumer Helpline (NCH)**: [consumerhelpline.gov.in](https://consumerhelpline.gov.in)
 - **e-Daakhil Online Commission Filing**: [edaakhil.nic.in](https://edaakhil.nic.in)
@@ -191,3 +257,4 @@ Detailed citations and verification dates are tracked in [docs/verified_facts.md
 - [x] Native Fetch.ai Payment Protocol (`Funds`, `RequestPayment`, `CommitPayment`, `CompletePayment`)
 - [x] Real-world problem solving with statutory citations
 - [x] Public GitHub repository with documentation and Innovation Lab badges
+- [x] Zero synthetic user traffic; technical diagnostic tests strictly documented in anchor.md
