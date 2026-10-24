@@ -9,9 +9,11 @@
 
 ## 0. Live Session State
 
-**Last updated:** 2026-10-24 14:35 IST — Speed & Polish Sprint (Latency <15s, Background Pre-Drafting, Zero Placeholders).
+**Last updated:** 2026-10-24 14:55 IST — Explainer Presentation & 3-Minute Teleprompter Script Complete.
 
 **Resolved in this Sprint:**
+- **Interactive Explainer Slide (`docs/explainer.html`)**: Complete standalone presentation with dark-mode styling, problem vs solution matrix, 5-agent inspector tabs, predefined card schemas showcase, and copyable demo prompt box.
+- **3-Minute Timed Video Teleprompter (`docs/demo_teleprompter.md`)**: Exact second-by-second breakdown (0:00 to 3:00) with visual directions and word-for-word voiceover script matching live case `#REC-25A7AEFF`.
 - **Latency & UI Stall (Root Cause Fixed)**:
   - Default LLM model updated to `asi1-mini` (3x faster; benchmarked 6.2s draft vs ~90s, 2.0s reply classification).
   - Background Speculative Drafting: `Concierge` triggers `DraftRequest` to `Drafter` in the background immediately upon rendering the Legal Rights detail card. When user clicks "Draft Formal Grievance Notice", the draft is already cached and served in **<0.1s**, eliminating the 2-minute stall and browser reload requirement.
@@ -27,9 +29,8 @@
   - `/reply` classifier offloaded with 8s worker timeout. All commands (`/ping`, `/status`, `/reply`, `/edaakhil`, `/health`) return in <2s and contain full descriptive fallback text for pure text interfaces.
 
 **Verified Offline Gates:**
-- `TESTING=1 PYTHONPATH=. .venv/bin/pytest tests/ -q` → **26 passed in 4.22s** (includes new `tests/test_drafter.py` and background drafting flow test).
+- `TESTING=1 PYTHONPATH=. .venv/bin/pytest tests/ -q` → **26 passed in 5.15s** (verified at 14:53 IST).
 - `TESTING=1 .venv/bin/python scripts/failure_drill.py` → **ALL 3 DRILLS PASSED**.
-- Offline draft generation benchmark: **6.21s** (238 words, zero brackets, current date present).
 
 **Previous state (workflow session, 12:20 IST):**
 
@@ -109,13 +110,15 @@
 
 | Deliverable | Status | Link / Reference | Notes |
 | :--- | :--- | :--- | :--- |
-| **Public GitHub Repository** | **IN PROGRESS** | https://github.com/MohamedAshiq09/reclaim-ai | Local git clean; initial commits pushed |
+| **Public GitHub Repository** | **DONE** | https://github.com/MohamedAshiq09/reclaim-ai | Clean working tree; synced to origin/main |
 | **README Innovation Lab Badges** | **DONE** | [README.md](README.md) | `tag:innovationlab` and `tag:hackathon` included |
 | **Agentverse Profile URLs** | **DONE** | See Section 3 below | All 5 agents registered on Agentverse |
-| **Public ASI:One Shared Chat URL** | **NOT STARTED** | Pending user live chat run | Will generate from ASI:One chat interface |
-| **Demo Video (3–5 min)** | **NOT STARTED** | Script ready in [docs/demo_script.md](docs/demo_script.md) | Recording scheduled for ~15:30 IST |
-| **Dashboard Agent Submission** | **NOT STARTED** | Fetch-A-Thon 3.0 Dashboard | Mandatory via Project Submission Agent |
-| **Agentic Workflow Layer** | **DONE** | [AGENTS.md](AGENTS.md), [.opencode/agents/](.opencode/agents/), [.opencode/skills/](.opencode/skills/), [opencode.json](opencode.json) | Rules contract + 6 subagents + 3 common skills; pushed on user instruction |
+| **Interactive Explainer Presentation** | **DONE** | [docs/explainer.html](docs/explainer.html) | Standalone dark-mode explainer with architecture tabs & demo copy box |
+| **Demo Script & Teleprompter** | **DONE** | [docs/demo_teleprompter.md](docs/demo_teleprompter.md) | Word-for-word timed 3-min script matching live case REC-25A7AEFF |
+| **Public ASI:One Shared Chat URL** | **READY** | Pending user link copy | Generated from user's live ASI:One chat session |
+| **Demo Video (3 min)** | **READY TO RECORD** | Teleprompter: [docs/demo_teleprompter.md](docs/demo_teleprompter.md) | Ready for user screen recording (3 min) |
+| **Dashboard Agent Submission** | **NOT STARTED** | Fetch-A-Thon 3.0 Dashboard | Submission window open; closes 17:50 IST |
+| **Agentic Workflow Layer** | **DONE** | [AGENTS.md](AGENTS.md), [.opencode/agents/](.opencode/agents/), [.opencode/skills/](.opencode/skills/), [opencode.json](opencode.json) | Rules contract + 6 subagents + 3 common skills |
 
 ---
 
