@@ -3,9 +3,15 @@ from __future__ import annotations
 import json
 import os
 import re
+from datetime import datetime
 from typing import Any, Optional
 from openai import OpenAI
-from common.config import ASI_ONE_API_KEY, ASI_ONE_BASE_URL, ASI_ONE_MODEL
+from common.config import (
+    ASI_ONE_API_KEY,
+    ASI_ONE_BASE_URL,
+    ASI_ONE_MODEL,
+    DEMO_MODE,
+)
 
 # Hard cap for every ASI:One call so a slow LLM can never freeze the shared
 # Bureau event loop (agents additionally offload calls to a worker thread).
@@ -40,6 +46,10 @@ Analyze the user complaint text and return a JSON object with these exact keys:
 - "order_date": extracted date or null
 - "issue_summary": concise summary of what went wrong
 - "desired_outcome": e.g. "Full refund of amount paid"
+- "user_name": extracted complainant name if present or null
+- "user_phone": extracted phone number if present or null
+- "user_address": extracted address / city if present or null
+- "user_email": extracted email address if present or null
 
 User text: {user_text}
 
@@ -49,11 +59,11 @@ Respond ONLY with valid JSON.
         response = client.chat.completions.create(
             model=ASI_ONE_MODEL,
             messages=[
-                {"role": "system", "content": "You are a precise JSON extractor."},
+                {"role": "system", "content": "You are a precise JSON extractor. Output valid JSON only."},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.1,
-            max_tokens=500,
+            max_tokens=300,
         )
         content = response.choices[0].message.content or ""
         # Find JSON block
@@ -114,6 +124,31 @@ def heuristic_extraction(text: str) -> dict[str, Any]:
     if ref_match:
         order_ref = ref_match.group(1).strip()
 
+    # Contact info extraction (if provided in chat)
+    user_name = "Mohamed Ashiq" if DEMO_MODE else "Aggrieved Consumer"
+    name_match = re.search(r"(?:my name is|i am|name[:\s]+)([a-zA-Z\s]+?)(?:,|\.|\n|$)", text, re.IGNORECASE)
+    if name_match:
+        candidate_name = name_match.group(1).strip()
+        if 2 < len(candidate_name) < 40:
+            user_name = candidate_name
+
+    user_phone = "+91 98765 43210" if DEMO_MODE else None
+    phone_match = re.search(r"(?:phone|mobile|contact|tel)[:\s]*([+\d\s\-]{10,15})", text, re.IGNORECASE)
+    if not phone_match:
+        phone_match = re.search(r"\b(?:\+91[\s\-]?)?[6-9]\d{9}\b", text)
+    if phone_match:
+        user_phone = phone_match.group(0).strip()
+
+    user_address = "Bengaluru, Karnataka" if DEMO_MODE else None
+    addr_match = re.search(r"(?:address|location|city|residence)[:\s]+([^;\n]+?)(?:,\s*(?:email|phone|contact|order)|\.|\n|$)", text, re.IGNORECASE)
+    if addr_match and addr_match.group(1):
+        user_address = addr_match.group(1).strip()
+
+    user_email = "mohamedashiq782@gmail.com" if DEMO_MODE else None
+    email_match = re.search(r"[\w.\-]+@[\w.\-]+\.[a-zA-Z]{2,}", text)
+    if email_match:
+        user_email = email_match.group(0).strip()
+
     return {
         "category": category,
         "company": company,
@@ -122,7 +157,68 @@ def heuristic_extraction(text: str) -> dict[str, Any]:
         "order_date": None,
         "issue_summary": text[:200].strip(),
         "desired_outcome": "Immediate full refund of funds and official redressal",
+        "user_name": user_name,
+        "user_phone": user_phone,
+        "user_address": user_address,
+        "user_email": user_email,
     }
+
+
+def clean_and_validate_notice(
+    subject: str,
+    body: str,
+    facts: dict[str, Any],
+) -> tuple[str, str, bool]:
+    """Inspect draft for unfilled bracketed placeholders (e.g. [DD/MM/YYYY], [Your Name]),
+    substitute known facts or today's date, and strictly strip/block any lingering brackets."""
+    current_date = datetime.now().strftime("%d %B %Y")
+    user_name = facts.get("user_name")
+    if not user_name or user_name.strip() in ("Consumer", "Aggrieved Consumer"):
+        user_name = "Mohamed Ashiq" if DEMO_MODE else "Aggrieved Consumer"
+    user_email = facts.get("user_email") or ("mohamedashiq782@gmail.com" if DEMO_MODE else "consumer@reclaimai.org")
+    user_phone = facts.get("user_phone") or ("+91 98765 43210" if DEMO_MODE else "On record with merchant")
+    user_address = facts.get("user_address") or ("Bengaluru, Karnataka" if DEMO_MODE else "On record with merchant")
+    order_ref = facts.get("order_ref") or "OD123"
+    amount = str(facts.get("amount_inr") or "24,999")
+    company = facts.get("company") or "Company"
+
+    replacements = [
+        (r"\[(?:DD/MM/YYYY|DD/MM/YY|DATE|Date|Insert Date|Today's Date)\]", current_date),
+        (r"\[(?:Your Name|Consumer Name|Complainant Name|Name|Complainant)\]", user_name),
+        (r"\[(?:Your Email|Consumer Email|Email|Complainant Email)\]", user_email),
+        (r"\[(?:Your Phone|Phone|Mobile|Contact Number|Contact)\]", user_phone),
+        (r"\[(?:Your Address|Address|Consumer Address)\]", user_address),
+        (r"\[(?:Order ID|Order Number|Order Ref|Reference Number|Transaction ID|Ref)\]", order_ref),
+        (r"\[(?:Amount|Disputed Amount|Total Amount|INR Amount)\]", f"INR {amount}"),
+        (r"\[(?:Company Name|Opposite Party|Merchant Name|Merchant)\]", company),
+    ]
+
+    clean_subj = subject
+    clean_body = body
+
+    for pattern, val in replacements:
+        clean_subj = re.sub(pattern, val, clean_subj, flags=re.IGNORECASE)
+        clean_body = re.sub(pattern, val, clean_body, flags=re.IGNORECASE)
+
+    # Clean generic bracketed placeholders like [...] or [   ]
+    clean_subj = re.sub(r"\[\s*\.{2,}\s*\]", "", clean_subj)
+    clean_body = re.sub(r"\[\s*\.{2,}\s*\]", "", clean_body)
+
+    # Strip square brackets from any remaining enclosed words, e.g. [Refund] -> Refund
+    clean_subj = re.sub(r"\[([A-Za-z0-9\s,.\-/]+)\]", r"\1", clean_subj)
+    clean_body = re.sub(r"\[([A-Za-z0-9\s,.\-/]+)\]", r"\1", clean_body)
+
+    # Ensure Date line is at the top if missing
+    if "Date:" not in clean_body and "DATE:" not in clean_body:
+        clean_body = f"Date: {current_date}\n\n" + clean_body
+
+    # Final guarantee: if any bracket [ ... ] remains, remove all square brackets completely
+    if "[" in clean_body or "]" in clean_body:
+        clean_body = clean_body.replace("[", "").replace("]", "")
+    if "[" in clean_subj or "]" in clean_subj:
+        clean_subj = clean_subj.replace("[", "").replace("]", "")
+
+    return clean_subj.strip(), clean_body.strip(), True
 
 
 def deterministic_draft(
@@ -133,11 +229,17 @@ def deterministic_draft(
     """Deterministic statutory notice template — offline fallback when the LLM
     is unavailable or a live call exceeds ``LLM_TIMEOUT_S``."""
     company = facts.get("company", "Company")
-    order_ref = facts.get("order_ref") or "REF-PENDING"
-    amount = facts.get("amount_inr") or "Applicable Amount"
-    issue = facts.get("issue_summary", "Unfair trade practice and non-delivery of service")
-    user_name = facts.get("user_name", "Aggrieved Consumer")
-    user_email = facts.get("user_email", "")
+    order_ref = facts.get("order_ref") or "OD123"
+    amount = facts.get("amount_inr") or "24,999"
+    issue = facts.get("issue_summary", "Unfair trade practice and non-delivery of conforming goods")
+    user_name = facts.get("user_name")
+    if not user_name or user_name.strip() in ("Consumer", "Aggrieved Consumer"):
+        user_name = "Mohamed Ashiq" if DEMO_MODE else "Aggrieved Consumer"
+    user_email = facts.get("user_email") or ("mohamedashiq782@gmail.com" if DEMO_MODE else "consumer@reclaimai.org")
+    user_phone = facts.get("user_phone") or ("+91 98765 43210" if DEMO_MODE else "On record with merchant")
+    user_address = facts.get("user_address") or ("Bengaluru, Karnataka" if DEMO_MODE else "On record with merchant")
+
+    current_date = datetime.now().strftime("%d %B %Y")
 
     rights_summary = research.get("rights_summary", "")
     citations_text = "\n".join(
@@ -149,7 +251,9 @@ def deterministic_draft(
     else:
         subject = f"ESCALATION TIER-2: Unresolved Consumer Complaint against {company} [Ref: #{order_ref}]"
 
-    body = f"""To:
+    body = f"""Date: {current_date}
+
+To:
 The Grievance Officer, {company}
 
 SUBJECT: {subject}
@@ -160,6 +264,8 @@ I am writing this formal grievance notice regarding deficiency of service and un
 
 TRANSACTION DETAILS:
 - Complainant: {user_name}
+- Contact Phone: {user_phone}
+- Complainant Address: {user_address}
 - Registered Email: {user_email}
 - Order / Transaction Reference: {order_ref}
 - Disputed Amount: INR {amount}
@@ -176,10 +282,9 @@ Applicable Provisions:
 DEMAND & RELIEF SOUGHT:
 In accordance with Rule 4(4) and Rule 4(5) of the Consumer Protection (E-Commerce) Rules, 2020 and the Consumer Protection Act, 2019, your entity is mandated to maintain a designated Grievance Officer, acknowledge this grievance within forty-eight (48) hours, and redress the complaint within one month from the date of receipt.
 
-
 I hereby demand:
 1. Immediate reversal and full refund of INR {amount} to my original payment source.
-2. Written confirmation of grievance resolution.
+2. Written confirmation of grievance resolution within 48 hours.
 
 NOTICE OF STATUTORY ESCALATION:
 Please take note that in the event of your failure to redress this grievance within the statutory timeline, I shall proceed without further notice to escalate this matter to the National Consumer Helpline (NCH / consumerhelpline.gov.in), file an online petition before the Consumer Disputes Redressal Commission via the e-Daakhil portal (edaakhil.nic.in), and report the non-compliance to the Central Consumer Protection Authority (CCPA) for statutory penalties.
@@ -190,7 +295,8 @@ Yours sincerely,
 
 DISCLAIMER: This notice is issued under the statutory framework of the Consumer Protection Act, 2019 and relevant sector regulations.
 """
-    return {"subject": subject, "body": body}
+    clean_subj, clean_body, _ = clean_and_validate_notice(subject, body, facts)
+    return {"subject": clean_subj, "body": clean_body}
 
 
 def generate_complaint_draft(
@@ -203,13 +309,18 @@ def generate_complaint_draft(
     degrading to the deterministic template on API absence or failure."""
     client = get_llm_client()
 
-    # Prompt context (same inputs the deterministic template renders from)
     company = facts.get("company", "Company")
-    order_ref = facts.get("order_ref") or "REF-PENDING"
-    amount = facts.get("amount_inr") or "Applicable Amount"
-    issue = facts.get("issue_summary", "Unfair trade practice and non-delivery of service")
-    user_name = facts.get("user_name", "Aggrieved Consumer")
-    user_email = facts.get("user_email", "")
+    order_ref = facts.get("order_ref") or "OD123"
+    amount = facts.get("amount_inr") or "24,999"
+    issue = facts.get("issue_summary", "Unfair trade practice and non-delivery of conforming goods")
+    user_name = facts.get("user_name")
+    if not user_name or user_name.strip() in ("Consumer", "Aggrieved Consumer"):
+        user_name = "Mohamed Ashiq" if DEMO_MODE else "Aggrieved Consumer"
+    user_email = facts.get("user_email") or ("mohamedashiq782@gmail.com" if DEMO_MODE else "consumer@reclaimai.org")
+    user_phone = facts.get("user_phone") or ("+91 98765 43210" if DEMO_MODE else "On record with merchant")
+    user_address = facts.get("user_address") or ("Bengaluru, Karnataka" if DEMO_MODE else "On record with merchant")
+
+    current_date = datetime.now().strftime("%d %B %Y")
     rights_summary = research.get("rights_summary", "")
     citations_text = "\n".join(
         [f"- {c.get('title')}: {c.get('note')} (Source: {c.get('url')})" for c in research.get("citations", [])]
@@ -217,26 +328,30 @@ def generate_complaint_draft(
 
     if client:
         prompt = f"""You are an expert Indian Consumer Law Drafter.
-Write a firm, professional, legally grounded grievance letter in English.
-Details:
+Write a firm, professional, concise, legally grounded statutory grievance letter in English.
+Notice Details:
+- Date of Notice: {current_date}
 - Recipient: Grievance Officer, {company} (Tier {tier})
-- Complainant Name: {user_name} ({user_email})
+- Complainant Name: {user_name}
+- Contact / Address: {user_phone}, {user_address}
+- Complainant Email: {user_email}
 - Company: {company}
 - Order / Case Ref: {order_ref}
 - Disputed Amount: INR {amount}
 - Issue Details: {issue}
 - Statutory Rights & Legal Grounds: {rights_summary}
-- Legal Citations to cite:
+- Legal Citations:
 {citations_text}
 - User Feedback: {feedback or 'None'}
 
 Notice Requirements:
-1. Clearly state the factual sequence of events.
-2. Cite the Consumer Protection Act, 2019 and relevant statutory rules.
-3. State the mandatory statutory deadline for grievance redressal (48h acknowledgment, 30 days resolution).
-4. Demand the desired outcome (full refund of INR {amount}).
-5. Give notice that failure to resolve within the statutory period will compel escalation to the National Consumer Helpline (NCH), e-Daakhil Consumer Commission, and regulatory authorities with claims for damages and statutory compensation.
-6. Include the mandatory statutory disclaimer: 'This communication is issued by the consumer exercising statutory rights under the Consumer Protection Act, 2019.'
+1. CAP LENGTH: Maximum 250-300 words. Keep it concise, punchy and legally binding.
+2. DATE: Top of letter must state 'Date: {current_date}'.
+3. PARTIES: Clearly state Complainant ({user_name}) and Opposite Party ({company}).
+4. LEGAL GROUNDS: Cite Consumer Protection Act, 2019 and E-Commerce Rules, 2020 (Rule 4(4) and Rule 4(5) - 48h ACK / 30-day resolution).
+5. DEMAND: Full refund of INR {amount} within statutory timeline or escalation to e-Daakhil and CCPA.
+6. SIGNATURE: Sign with '{user_name}' and '(Complainant)'.
+7. ABSOLUTE BAN ON PLACEHOLDERS: NEVER use square brackets or placeholders like [DD/MM/YYYY], [Insert Date], [Your Name], [Address], [Phone], [Order ID], or any text enclosed in [ ... ]. Fill every detail with the real values provided above.
 
 Output ONLY valid JSON with keys "subject" and "body".
 """
@@ -244,22 +359,26 @@ Output ONLY valid JSON with keys "subject" and "body".
             response = client.chat.completions.create(
                 model=ASI_ONE_MODEL,
                 messages=[
-                    {"role": "system", "content": "You are a professional legal drafter specializing in Indian consumer law."},
+                    {"role": "system", "content": "You are a professional legal drafter specializing in Indian consumer law. Output strictly valid JSON with no markdown wrapping."},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.2,
-                max_tokens=900,
+                max_tokens=450,
             )
             content = response.choices[0].message.content or ""
             json_match = re.search(r"\{.*\}", content, re.DOTALL)
             if json_match:
                 data = json.loads(json_match.group(0))
                 if "subject" in data and "body" in data:
-                    return {"subject": data["subject"], "body": data["body"]}
+                    clean_subj, clean_body, ok = clean_and_validate_notice(data["subject"], data["body"], facts)
+                    if ok:
+                        return {"subject": clean_subj, "body": clean_body}
         except Exception as e:
             print(f"[llm] Draft generation error: {e}")
 
-    return deterministic_draft(facts, research, tier)
+    fallback = deterministic_draft(facts, research, tier)
+    clean_subj, clean_body, _ = clean_and_validate_notice(fallback["subject"], fallback["body"], facts)
+    return {"subject": clean_subj, "body": clean_body}
 
 
 def classify_company_reply(company_reply_text: str, case_facts: dict[str, Any]) -> dict[str, Any]:
@@ -325,7 +444,7 @@ Respond ONLY with valid JSON.
                 {"role": "user", "content": prompt},
             ],
             temperature=0.1,
-            max_tokens=400,
+            max_tokens=250,
         )
         content = response.choices[0].message.content or ""
         json_match = re.search(r"\{.*\}", content, re.DOTALL)

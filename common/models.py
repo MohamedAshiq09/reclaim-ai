@@ -16,6 +16,8 @@ class CaseFacts(Model):
     desired_outcome: str = "Full refund and formal grievance redressal"
     user_name: str = "Consumer"
     user_email: str = ""
+    user_phone: Optional[str] = None
+    user_address: Optional[str] = None
 
 
 class ResearchRequest(Model):
