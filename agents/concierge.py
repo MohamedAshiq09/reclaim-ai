@@ -138,6 +138,7 @@ PENDING_CARD_ACTIONS: dict[str, dict[str, str | None]] = {
     "DISPATCHING": {"yes": None, "no": None},
     "WAITING": {"yes": None, "no": None},
     "ESCALATED": {"yes": None, "no": None},
+    "CARDTEST": {"yes": "check_health", "no": "status"},
 }
 
 # Session state -> primary action to re-run for "retry".
@@ -271,7 +272,7 @@ async def handle_chat_message(ctx: Context, sender: str, msg: ChatMessage):
                     await handle_ping_command(ctx, sender, session)
                     continue
                 elif clean_lower in ("/cardtest", "cardtest", "card test"):
-                    await handle_cardtest_command(ctx, sender)
+                    await handle_cardtest_command(ctx, sender, session)
                     continue
                 elif clean_lower in ("/health", "health", "system health", "diagnostics"):
                     await handle_health_command(ctx, sender)
@@ -397,10 +398,11 @@ async def handle_ping_command(ctx: Context, sender: str, session: dict[str, Any]
     await ctx.send(sender, reply)
 
 
-async def handle_cardtest_command(ctx: Context, sender: str):
+async def handle_cardtest_command(ctx: Context, sender: str, session: dict[str, Any]):
     """Send a diagnostic review card on demand — verifies card rendering and
     gives the user two working button + text fallback paths."""
     log_inbound(ctx, "Command", sender, "/cardtest")
+    session["state"] = "CARDTEST"
     payload = build_review_card(
         title="Card Diagnostic - Review Schema",
         summary_rows=[

@@ -148,7 +148,17 @@ def test_cardtest_sends_review_card(tiny_db, offline_llm):
     meta = next(c.metadata for c in reply.content if isinstance(c, MetadataContent))
     assert meta["card_kind"] == "review"
     assert meta["is_terminal"] == "true"
-    assert "Simple Review" in meta['card_payload'] or "Card Diagnostic" in meta["card_payload"]
+    assert "Card Diagnostic" in meta["card_payload"]
+
+    # Typed fallbacks promised by the diagnostic: 1 opens health, 2 opens status.
+    ctx2 = FakeCtx()
+    run(ctx2, make_chat_message("1"))
+    health = next(
+        m
+        for _, m in ctx2.sent[1:]
+        if isinstance(m, ChatMessage) and any(isinstance(c, MetadataContent) for c in m.content)
+    )
+    assert "System Health" in next(c.metadata for c in health.content if isinstance(c, MetadataContent))["card_payload"]
 
 
 def test_typed_text_equivalents_route_to_pending_actions(
