@@ -69,3 +69,34 @@ def test_parse_selection_prose_fallback():
     prose = "The user approved the draft to dispatch."
     parsed = parse_selection(prose)
     assert parsed.get("action") == "approve_dispatch"
+
+
+def test_build_strength_and_edaakhil_cards():
+    from common.cards import (
+        build_edaakhil_card,
+        build_health_card,
+        build_reply_decision_card,
+        build_strength_card,
+    )
+    facts = {"company": "Flipkart", "amount_inr": 24999.0}
+    strength = {
+        "merit_score": 94,
+        "grade": "Strong Statutory Merit",
+        "forum": "District Consumer Commission",
+        "forum_rule": "Rules 2021",
+        "violations": ["Rule 4(5)"],
+        "missing_evidence": ["Invoice"],
+    }
+    scard = build_strength_card(facts, strength)
+    assert "Legal Assessment" in scard["title"]
+    assert scard["approve_cta"]["selection"]["action"] == "proceed_to_draft"
+
+    ecard = build_edaakhil_card("REC-TEST", {"forum": "District Commission", "merit_score": 94, "annexures": [{"title": "A-1"}]})
+    assert ecard["title"].startswith("e-Daakhil")
+
+    hcard = build_health_card([{"name": "Concierge", "status": "ONLINE", "latency": "12ms"}])
+    assert "System Health" in hcard["title"]
+
+    rcard = build_reply_decision_card("REC-TEST", "Flipkart", {"sentiment": "rejected", "recommended_action": "rebuttal", "reasoning": "Doorstep void"}, "Send Rebuttal", "send_rebuttal")
+    assert rcard["title"].startswith("Decision Loop")
+

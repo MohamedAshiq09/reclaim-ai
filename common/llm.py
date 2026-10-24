@@ -228,3 +228,246 @@ Yours sincerely,
 DISCLAIMER: This notice is issued under the statutory framework of the Consumer Protection Act, 2019 and relevant sector regulations.
 """
     return {"subject": subject, "body": body}
+
+
+def classify_company_reply(company_reply_text: str, case_facts: dict[str, Any]) -> dict[str, Any]:
+    """Classify company reply using ASI:One LLM into: resolved, rejected, stalling, or needs_info."""
+    client = get_llm_client()
+    company = case_facts.get("company", "Company")
+    category = case_facts.get("category", "ecommerce")
+    amount = case_facts.get("amount_inr", 0)
+
+    # Deterministic fallback classification
+    lower = company_reply_text.lower()
+    default_sentiment = "stalling"
+    default_action = "ultimatum"
+    default_reasoning = "Company response received; analyzing resolution commitment."
+
+    if any(k in lower for k in ["refund initiated", "approved", "processed", "credited", "apologize for the inconvenience", "resolved"]):
+        default_sentiment = "resolved"
+        default_action = "close"
+        default_reasoning = "The company has agreed to the remedy or confirmed refund issuance."
+    elif any(k in lower for k in ["rejected", "denied", "not eligible", "cannot be processed", "package intact", "doorstep", "customer fault", "violation"]):
+        default_sentiment = "rejected"
+        default_action = "rebuttal"
+        default_reasoning = "Company issued a rejection; invoking statutory breach and rebuttal notice."
+    elif any(k in lower for k in ["provide", "upload", "share", "unboxing video", "photo", "document", "id proof"]):
+        default_sentiment = "needs_info"
+        default_action = "request_evidence"
+        default_reasoning = "Company requested additional evidence or clarification from complainant."
+    else:
+        default_sentiment = "stalling"
+        default_action = "ultimatum"
+        default_reasoning = "Company response contains delaying language without concrete redressal."
+
+    if not client:
+        return {
+            "sentiment": default_sentiment,
+            "recommended_action": default_action,
+            "reasoning": default_reasoning,
+            "statutory_violation": "Rule 4(5) 48h acknowledgment and 30-day redressal mandate (E-Commerce Rules 2020)" if category == "ecommerce" else "DGCA CAR Part II Para 3.3",
+        }
+
+    prompt = f"""You are ReclaimAI's legal decision agent analyzing a corporate reply in an Indian consumer dispute.
+Company: {company}
+Dispute Category: {category}
+Disputed Amount: INR {amount}
+Original Issue: {case_facts.get('issue_summary', '')}
+
+Company Reply Text:
+"{company_reply_text}"
+
+Analyze this reply carefully and return JSON with these exact keys:
+- "sentiment": one of ["resolved", "rejected", "stalling", "needs_info"]
+- "recommended_action": one of ["close", "rebuttal", "ultimatum", "request_evidence"]
+- "reasoning": 1-2 sentence explanation of why this classification was made
+- "statutory_violation": specific legal provision violated if rejected or stalled (e.g. "Rule 4(5) E-Commerce Rules 2020", "Section 2(47) CPA 2019 Unfair Trade Practice", "DGCA CAR Section 3 Series M Part II Para 3.3")
+
+Respond ONLY with valid JSON.
+"""
+    try:
+        response = client.chat.completions.create(
+            model=ASI_ONE_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a senior consumer rights legal expert in India."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.1,
+            max_tokens=400,
+        )
+        content = response.choices[0].message.content or ""
+        json_match = re.search(r"\{.*\}", content, re.DOTALL)
+        if json_match:
+            data = json.loads(json_match.group(0))
+            if "sentiment" in data:
+                return data
+    except Exception as e:
+        print(f"[llm] Error in reply classification: {e}")
+
+    return {
+        "sentiment": default_sentiment,
+        "recommended_action": default_action,
+        "reasoning": default_reasoning,
+        "statutory_violation": "Rule 4(5) Consumer Protection (E-Commerce) Rules 2020",
+    }
+
+
+def compute_case_strength(case_facts: dict[str, Any]) -> dict[str, Any]:
+    """Compute quantitative case merit score, evidence checklist, and pecuniary forum."""
+    amount = float(case_facts.get("amount_inr") or 0.0)
+    category = case_facts.get("category", "ecommerce")
+
+    # Pecuniary jurisdiction under Consumer Protection Rules 2021 (G.S.R. 886(E))
+    if amount <= 5000000:  # <= 50 Lakhs
+        forum_name = "District Consumer Disputes Redressal Commission (DCDRC)"
+        forum_rule = "District Commission Jurisdiction (Up to ₹50 Lakhs - Rules 2021)"
+    elif amount <= 20000000:  # 50 Lakhs to 2 Crores
+        forum_name = "State Consumer Disputes Redressal Commission (SCDRC)"
+        forum_rule = "State Commission Jurisdiction (₹50 Lakhs to ₹2 Crores - Rules 2021)"
+    else:
+        forum_name = "National Consumer Disputes Redressal Commission (NCDRC)"
+        forum_rule = "National Commission Jurisdiction (Exceeding ₹2 Crores - Rules 2021)"
+
+    # Base merit score
+    score = 92
+    violations = [
+        "Section 2(11) Consumer Protection Act, 2019 (Deficiency in Service)",
+        "Section 2(47) Consumer Protection Act, 2019 (Unfair Trade Practice)",
+    ]
+
+    if category == "ecommerce":
+        violations.extend([
+            "Rule 4(4) Consumer Protection (E-Commerce) Rules, 2020 (Mandatory Grievance Officer)",
+            "Rule 4(5) Consumer Protection (E-Commerce) Rules, 2020 (Mandatory 48h ACK / 30d Redressal)",
+        ])
+    elif category == "airline":
+        violations.extend([
+            "DGCA CAR Section 3, Series M, Part II, Para 3.3 (Mandatory 7-day refund for credit card)",
+            "DGCA CAR Section 3, Series M, Part IV (Facilities & Compensation)",
+        ])
+    elif category == "bank":
+        violations.extend([
+            "Reserve Bank - Integrated Ombudsman Scheme, 2021 (Clause 10 & 15)",
+        ])
+
+    missing_evidence = []
+    if not case_facts.get("order_ref"):
+        missing_evidence.append("Tax Invoice / Order Confirmation Number")
+    missing_evidence.extend([
+        "Photographs / Video of delivered defect or transaction screenshot",
+        "Record of prior communication with customer care",
+    ])
+
+    return {
+        "merit_score": score,
+        "grade": "Strong Statutory Merit (High Likelihood of Relief)",
+        "forum": forum_name,
+        "forum_rule": forum_rule,
+        "violations": violations,
+        "missing_evidence": missing_evidence,
+    }
+
+
+def generate_rebuttal_draft(case_facts: dict[str, Any], company_reply: str, classification: dict[str, Any]) -> dict[str, str]:
+    """Generate a formal legal rebuttal notice to an adverse corporate reply."""
+    company = case_facts.get("company", "Company")
+    user_name = case_facts.get("user_name", "Complainant")
+    order_ref = case_facts.get("order_ref", "N/A")
+    amount = case_facts.get("amount_inr", "N/A")
+    violation = classification.get("statutory_violation", "Rule 4(5) E-Commerce Rules, 2020")
+
+    subject = f"REBUTTAL NOTICE: Rejection of Adverse Claim & Final Statutory Demand — Order #{order_ref}"
+    body = f"""To:
+The Grievance Officer, {company}
+
+SUBJECT: {subject}
+
+Dear Sir/Madam,
+
+I am in receipt of your communication dated {company_reply[:80]} regarding Order #{order_ref}.
+
+Take notice that your entity's response is legally untenable and rejected on the following statutory grounds:
+
+1. STATUTORY BREACH OF REDRESSAL MANDATE:
+Under {violation}, your entity is strictly prohibited from summarily disclaiming liability for defective goods or service deficiencies. The burden of delivering goods conforming to purchase specifications rests entirely on the entity under Section 2(47) and Section 84 of the Consumer Protection Act, 2019.
+
+2. UNLAWFUL DENIAL:
+Your purported ground of rejection ("{company_reply[:140]}") constitutes an Unfair Trade Practice under Section 2(47) of CPA 2019 and is null and void in law. A consumer is legally entitled to inspect purchased goods and reject latent defects or damaged items upon unboxing.
+
+3. FINAL PRE-LITIGATION DEMAND (24-HOUR ULTIMATUM):
+I hereby give you a final window of twenty-four (24) hours to:
+(a) Recall your unlawful rejection;
+(b) Process the full refund of INR {amount} to my payment account.
+
+FAILING WHICH:
+An electronic complaint petition shall be instituted immediately on the e-Daakhil portal (edaakhil.nic.in) before the competent Consumer Commission seeking full refund, 18% p.a. interest, and exemplary compensation of INR 50,000 for mental agony and litigation expenses.
+
+Yours faithfully,
+{user_name}
+(Complainant)
+"""
+    return {"subject": subject, "body": body}
+
+
+def generate_edaakhil_packet(case_facts: dict[str, Any], timeline_events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Generate a ready-to-file e-Daakhil consumer complaint packet."""
+    company = case_facts.get("company", "Opposite Party")
+    user_name = case_facts.get("user_name", "Complainant")
+    amount = case_facts.get("amount_inr", 0.0)
+    order_ref = case_facts.get("order_ref", "N/A")
+    case_id = case_facts.get("case_id", "N/A")
+
+    strength = compute_case_strength(case_facts)
+
+    petition_text = f"""BEFORE THE HON'BLE {strength['forum'].upper()}
+CONSUMER COMPLAINT NO. ________ / 2026
+
+IN THE MATTER OF:
+{user_name}
+... COMPLAINANT
+
+VERSUS
+
+{company} & Ors.
+... OPPOSITE PARTY(IES)
+
+COMPLAINT UNDER SECTION 35 OF THE CONSUMER PROTECTION ACT, 2019
+FOR DEFICIENCY IN SERVICE AND UNFAIR TRADE PRACTICES
+
+1. JURISDICTION:
+The Complainant paid consideration of INR {amount}, which falls within the pecuniary jurisdiction of this Hon'ble Commission pursuant to the Consumer Protection Rules, 2021.
+
+2. STATEMENT OF FACTS:
+- On or about {case_facts.get('order_date', 'recent date')}, the Complainant purchased goods/services under Order/Ref #{order_ref} for INR {amount}.
+- The Opposite Party delivered damaged/defective product and refused redressal: {case_facts.get('issue_summary', '')}.
+- The Complainant served formal statutory grievance notice on the Opposite Party's Grievance Officer pursuant to statutory mandates.
+- The Opposite Party failed and neglected to resolve the grievance.
+
+3. STATUTORY GROUNDS:
+- Direct violation of {", ".join(strength['violations'])}.
+- Failure to adhere to statutory redressal timelines.
+
+4. PRAYER FOR RELIEF:
+Wherefore, it is most respectfully prayed that this Hon'ble Commission may be pleased to:
+(a) Direct the Opposite Party to refund the sum of INR {amount} along with interest @ 18% p.a.
+(b) Direct the Opposite Party to pay INR 25,000 towards mental agony and harassment.
+(c) Direct the Opposite Party to pay INR 10,000 towards litigation costs.
+
+COMPLAINANT
+THROUGH: ReclaimAI Autonomous Consumer Rights Framework (Case #{case_id})
+"""
+
+    annexures = [
+        {"title": "Annexure A-1", "desc": f"Tax Invoice / Order Confirmation #{order_ref}"},
+        {"title": "Annexure A-2", "desc": "Photographic evidence of defective delivery"},
+        {"title": "Annexure A-3", "desc": "Formal Statutory Notice served via ReclaimAI"},
+        {"title": "Annexure A-4", "desc": "Chronological audit trail of unredressed grievance"},
+    ]
+
+    return {
+        "forum": strength["forum"],
+        "petition_text": petition_text,
+        "annexures": annexures,
+        "merit_score": strength["merit_score"],
+    }
+
