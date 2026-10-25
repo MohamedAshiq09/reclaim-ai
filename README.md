@@ -7,24 +7,56 @@
 [![ASI:One Compatible](https://img.shields.io/badge/ASI:One-Interactive_Cards_v1-emerald.svg)](https://asi1.ai/)
 [![Payment Protocol](https://img.shields.io/badge/Payment_Protocol-FET_On--Chain-orange.svg)](https://fetch.ai/)
 
-> **Fetch-A-Thon 3.0 (India)** — *ASI:One Agent Challenge: From Intent to Action*  
-> **Tagline**: Turning Indian consumer grievances into researched, cited, and dispatched legal notices with autonomous regulatory escalation and on-chain FET tracking.
+ReclaimAI: a team of five Fetch.ai agents that turns a refused refund into a sent notice and an automatic escalation, inside one ASI:One chat.
+
+---
+
+## 🔗 Links
+
+- **Try it live**: ASI:One agent page: https://asi1.ai/ai/reclaim-ai
+- **Shared chat (full workflow)**: https://asi1.ai/chat/8b788bb7-d4a9-416e-a267-732e47865a48
+
+### Agents on Agentverse
+
+| Name | Handle | Address | Profile |
+| :--- | :--- | :--- | :--- |
+| Concierge | @reclaim-ai | `agent1q2a0f0a8zyw3229agt7saxtvenftxwe0gry6nv02dzd78rvye98tzty77e7` | https://agentverse.ai/agents/details/agent1q2a0f0a8zyw3229agt7saxtvenftxwe0gry6nv02dzd78rvye98tzty77e7/profile |
+| Researcher | @reclaim-researcher | `agent1qgktn2gauj62w4uaynnapajvsexxjgxuq8ylj6ru2503p9hxt09h6tcgaum` | https://agentverse.ai/agents/details/agent1qgktn2gauj62w4uaynnapajvsexxjgxuq8ylj6ru2503p9hxt09h6tcgaum/profile |
+| Drafter | @reclaim-drafter | `agent1q00z4x9d574zttujnjwkj7zz7u0elv4jw4exrrefvqegjnz0dntu5cj5js0` | https://agentverse.ai/agents/details/agent1q00z4x9d574zttujnjwkj7zz7u0elv4jw4exrrefvqegjnz0dntu5cj5js0/profile |
+| Dispatcher | @reclaim-dispatcher | `agent1qg9evq8equ7kkt2nw8fkg2wgujr6sy69ucpeflyr28539rnx8v7ng2wuu8l` | https://agentverse.ai/agents/details/agent1qg9evq8equ7kkt2nw8fkg2wgujr6sy69ucpeflyr28539rnx8v7ng2wuu8l |
+| Watcher | @reclaim-watcher | `agent1qgz54hf8dzdvqsuf3ja9vfvdl25d9umed0r6y6vhalwtl2s0vqkmw3l0a46` | https://agentverse.ai/agents/details/agent1qgz54hf8dzdvqsuf3ja9vfvdl25d9umed0r6y6vhalwtl2s0vqkmw3l0a46/profile |
+
+### Try it
+Open [ASI:One](https://asi1.ai/ai/reclaim-ai), start a chat with **@reclaim-ai** and send:
+> "Flipkart delivered a broken Samsung phone worth Rs 24,999, order OD123, and refuses my refund."
+
+More example prompts to try:
+- **Airline refund**: "IndiGo flight 6E-204 was cancelled and refund of Rs 8,450 was not credited after 14 days, PNR ABC123."
+- **Bank/UPI charge**: "Unauthorized international transaction of Rs 14,200 debited from my HDFC credit card ending 4321, transaction ref TXN9876."
+
+*Note: the agents must be running for a live test; in demo mode the notice email is redirected to our own inbox, so no company is contacted.*
+
+### Honest notes
+- The first 10 interactions on the Concierge Agentverse profile were developer diagnostic tests, not user traffic.
+- Payments use the Fetch.ai testnet.
+- This is general information, not legal advice.
 
 ---
 
 ## 📑 Table of Contents
-1. [The Real-World Problem](#-the-real-world-problem)
-2. [The Solution: ReclaimAI](#-the-solution-reclaimai)
-3. [End-to-End System Architecture](#-end-to-end-system-architecture)
-4. [5-Agent Multi-Agent Bureau](#-5-agent-multi-agent-bureau)
-5. [Complete Workflow Sequence Diagram](#-complete-workflow-sequence-diagram)
-6. [ASI:One Interactive Cards Showcase](#-asione-interactive-cards-showcase)
-7. [Fetch.ai On-Chain Payment Protocol](#-fetchai-on-chain-payment-protocol)
-8. [Interactive Commands & Decision Loop](#-interactive-commands--decision-loop)
-9. [Quick Start & Local Execution](#-quick-start--local-execution)
-10. [Honest Transparency: Real vs. Simulated Matrix](#-honest-transparency-real-vs-simulated-matrix)
-11. [Verified Indian Statutory Corpus](#-verified-indian-statutory-corpus)
-12. [Hackathon Evaluation Checklist](#-hackathon-evaluation-checklist)
+1. [Links](#-links)
+2. [The Real-World Problem](#-the-real-world-problem)
+3. [The Solution: ReclaimAI](#-the-solution-reclaimai)
+4. [End-to-End System Architecture](#-end-to-end-system-architecture)
+5. [5-Agent Multi-Agent Bureau](#-5-agent-multi-agent-bureau)
+6. [Complete Workflow Sequence Diagram](#-complete-workflow-sequence-diagram)
+7. [ASI:One Interactive Cards Showcase](#-asione-interactive-cards-showcase)
+8. [Fetch.ai On-Chain Payment Protocol](#-fetchai-on-chain-payment-protocol)
+9. [Interactive Commands & Decision Loop](#-interactive-commands--decision-loop)
+10. [Quick Start & Local Execution](#-quick-start--local-execution)
+11. [Honest Transparency: Real vs. Simulated Matrix](#-honest-transparency-real-vs-simulated-matrix)
+12. [Verified Indian Statutory Corpus](#-verified-indian-statutory-corpus)
+13. [Hackathon Evaluation Checklist](#-hackathon-evaluation-checklist)
 
 ---
 

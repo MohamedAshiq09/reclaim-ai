@@ -9,9 +9,10 @@
 
 ## 0. Live Session State
 
-**Last updated:** 2026-10-24 14:55 IST — Explainer Presentation & 3-Minute Teleprompter Script Complete.
+**Last updated:** 2026-10-25 10:02 IST — README Links Block & Shared Chat URL Added.
 
 **Resolved in this Sprint:**
+- **README Links Block Added**: Added verified Links block at the very top of README.md with one-line summary, live ASI:One agent page, public shared chat URL (`https://asi1.ai/chat/8b788bb7-d4a9-416e-a267-732e47865a48`), Agentverse profile URLs table with deterministic addresses, Try it prompts, and honest notes.
 - **Interactive Explainer Slide (`docs/explainer.html`)**: Complete standalone presentation with dark-mode styling, problem vs solution matrix, 5-agent inspector tabs, predefined card schemas showcase, and copyable demo prompt box.
 - **3-Minute Timed Video Teleprompter (`docs/demo_teleprompter.md`)**: Exact second-by-second breakdown (0:00 to 3:00) with visual directions and word-for-word voiceover script matching live case `#REC-25A7AEFF`.
 - **Latency & UI Stall (Root Cause Fixed)**:
@@ -115,7 +116,7 @@
 | **Agentverse Profile URLs** | **DONE** | See Section 3 below | All 5 agents registered on Agentverse |
 | **Interactive Explainer Presentation** | **DONE** | [docs/explainer.html](docs/explainer.html) | Standalone dark-mode explainer with architecture tabs & demo copy box |
 | **Demo Script & Teleprompter** | **DONE** | [docs/demo_teleprompter.md](docs/demo_teleprompter.md) | Word-for-word timed 3-min script matching live case REC-25A7AEFF |
-| **Public ASI:One Shared Chat URL** | **READY** | Pending user link copy | Generated from user's live ASI:One chat session |
+| **Public ASI:One Shared Chat URL** | **DONE** | https://asi1.ai/chat/8b788bb7-d4a9-416e-a267-732e47865a48 | Live end-to-end multi-agent workflow verified |
 | **Demo Video (3 min)** | **READY TO RECORD** | Teleprompter: [docs/demo_teleprompter.md](docs/demo_teleprompter.md) | Ready for user screen recording (3 min) |
 | **Dashboard Agent Submission** | **NOT STARTED** | Fetch-A-Thon 3.0 Dashboard | Submission window open; closes 17:50 IST |
 | **Agentic Workflow Layer** | **DONE** | [AGENTS.md](AGENTS.md), [.opencode/agents/](.opencode/agents/), [.opencode/skills/](.opencode/skills/), [opencode.json](opencode.json) | Rules contract + 6 subagents + 3 common skills |
